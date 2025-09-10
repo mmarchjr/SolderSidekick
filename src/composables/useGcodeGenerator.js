@@ -130,6 +130,10 @@ export function useGcodeGenerator() {
         const result = func(...Object.values(variables));
         
         if (typeof result === 'number') {
+          // If the expression uses Math.round() or result is an integer, don't add decimals
+          if (expression.includes('Math.round') || Number.isInteger(result)) {
+            return result.toString();
+          }
           // Default: use 2 decimal places for expressions
           return result.toFixed(2);
         }

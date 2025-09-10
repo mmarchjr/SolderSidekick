@@ -29,10 +29,10 @@ G1 E{PRIME} F600 ; Prime soldering iron with a small amount of solder
 G1 E-{PRIME_RETRACT} F800 ; Retract solder from touching soldering iron
 G1 Z{Z_OFFSET} F800; Move to PCB height
 G1 X{X + X_OFFSET} F800 ; Move to solder point
-G4 S{SOAK} ; Soak time
+G4 P{SOAK * 1000} ; Soak time (ms)
 G1 E{FEED} F500 ; Solder the point
 G1 E-{RETRACT} F800 ; Retract solder from touching soldering iron
-G4 S{DWELL} ; Dwell time
+G4 P{DWELL * 1000} ; Dwell time (ms)
 G1 Z{SOLDER_SAFE_Z} F800 ; Lift soldering iron`;
 
 const endGcodeTemplate = `; End G-code
