@@ -148,7 +148,7 @@
               <th title="The order in which the point will be soldered">#</th>
               <th title="X position in mm">X</th>
               <th title="Y position in mm">Y</th>
-              <th title="Drill tool used, can be useful for feed/dwell time"><i class="fas fa-tools"></i></th>
+              <th title="Hole diameter in mm"><i class="fas fa-circle"></i></th>
               <th title="Seconds spent preheating the pad and the part">Soak</th>
               <th title="Amount of solder to extrude (mm)">Feed</th>
               <th title="Seconds spent holding the soldering iron after applying solder">Dwell</th>
@@ -172,7 +172,7 @@
               <td><b>{{ hole.pathIndex !== null ? hole.pathIndex + 1 : '-' }}</b></td>
               <td>{{ hole.x.toFixed(1) }}</td>
               <td>{{ hole.y.toFixed(1) }}</td>
-              <td>{{ hole.tool }}</td>
+              <td>{{ hole.size }}</td>
               
               
               <td>
@@ -906,9 +906,11 @@ const drawPathLines = () => {
 
 // Draw all holes (after transform applied)
 const drawDrillHoles = () => {
-  const r = radius / scale;
   for (const d of filteredDrillData.value) {
     const x = d.x, y = -d.y;
+    // Use actual hole diameter for circle radius (diameter / 2)
+    const holeDiameter = getDiameter(d.size);
+    const r = (holeDiameter / 2) || (radius / scale); // Fallback to default if no diameter
     ctx.beginPath();
     ctx.arc(x, y, r, 0, 2 * Math.PI);
     
