@@ -2,7 +2,7 @@
 
     <div class="row toolpath-layout gx-3">
 
-      <div class="col-lg-8 position-relative canvas-wrapper"
+      <div class="col-lg-7 position-relative canvas-wrapper"
         @dragover.prevent
         @drop.prevent="handleCanvasDrop"
       >
@@ -75,7 +75,7 @@
 
       </div>
 
-      <div class="col-lg-4 position-relative right-panel">
+      <div class="col-lg-5 position-relative right-panel">
 
         <div class="align-items-center">
   <div class="mx-3 my-2">
@@ -148,7 +148,7 @@
               <th title="The order in which the point will be soldered">#</th>
               <th title="X position in mm">X</th>
               <th title="Y position in mm">Y</th>
-              <th title="Hole diameter in mm"><i class="fas fa-circle"></i></th>
+              <th title="Hole diameter (mm)"><i class="fas fa-circle"></i></th>
               <th title="Seconds spent preheating the pad and the part">Soak</th>
               <th title="Amount of solder to extrude (mm)">Feed</th>
               <th title="Seconds spent holding the soldering iron after applying solder">Dwell</th>
@@ -172,7 +172,7 @@
               <td><b>{{ hole.pathIndex !== null ? hole.pathIndex + 1 : '-' }}</b></td>
               <td>{{ hole.x.toFixed(1) }}</td>
               <td>{{ hole.y.toFixed(1) }}</td>
-              <td>{{ hole.size }}</td>
+              <td>{{ getDiameter(hole.size) }}</td>
               
               
               <td>
