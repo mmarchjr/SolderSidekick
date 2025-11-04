@@ -29,6 +29,9 @@
       <button class="btn btn-outline-secondary" @click="mirrorHorizontal"><i class="fa-solid fa-right-left"></i></button>
       <button class="btn btn-outline-secondary" @click="mirrorVertical"><i class="fa-solid fa-right-left r90"></i></button>
 
+      <label class="form-label pcb-section">Via Filter (mm) <i class="fas fa-filter"></i></label>
+      <input type="number" class="form-control d-inline w-auto pcb-input" v-model.number="drillStore.viaFilterDiameter" step="0.1" min="0" @input="updateCanvas()">
+
     </div>
 
     <!-- Toolbar -->
@@ -904,7 +907,7 @@ const drawPathLines = () => {
 // Draw all holes (after transform applied)
 const drawDrillHoles = () => {
   const r = radius / scale;
-  for (const d of drillStore.drillData) {
+  for (const d of filteredDrillData.value) {
     const x = d.x, y = -d.y;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, 2 * Math.PI);
@@ -939,7 +942,7 @@ const drawPathLabels = () => {
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
 
-  for (const d of drillStore.drillData) {
+  for (const d of filteredDrillData.value) {
     if (d.pathIndex == null) continue;
     const rx = d.x * cos - d.y * sin + drillStore.originOffsetX;
     const ry = d.x * sin + d.y * cos + drillStore.originOffsetY;
@@ -1012,8 +1015,28 @@ const drawFixedArrow = (ctx, x, y, dx, dy, color) => {
 
 
 
+// Helper function to extract diameter from size string (e.g., "0.8 mm" -> 0.8)
+const getDiameter = (sizeString) => {
+  if (!sizeString) return 0;
+  const match = sizeString.match(/[\d.]+/);
+  return match ? parseFloat(match[0]) : 0;
+};
+
+// Computed property that filters drill points by diameter
+// Always shows points that are marked for soldering or are in the toolpath
+const filteredDrillData = computed(() => {
+  return drillStore.drillData.filter(hole => {
+    // Always show if marked to solder or in the path
+    if (hole.solder || hole.pathIndex !== null) return true;
+
+    // Otherwise, filter by diameter
+    const diameter = getDiameter(hole.size);
+    return diameter >= drillStore.viaFilterDiameter;
+  });
+});
+
 const sortedDrillData = computed(() => {
-  return [...drillStore.drillData].sort((a, b) => {
+  return [...filteredDrillData.value].sort((a, b) => {
     if (a.pathIndex === null) return 1;
     if (b.pathIndex === null) return -1;
     return a.pathIndex - b.pathIndex;
@@ -1048,7 +1071,7 @@ const handleMouseDown = (e) => {
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
 
-  const clicked = drillStore.drillData.find(d => {
+  const clicked = filteredDrillData.value.find(d => {
     const dx = d.x;
     const dy = d.y;
 
@@ -1143,7 +1166,7 @@ const handleMouseUp = () => {
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
 
-  drillStore.drillData.forEach(d => {
+  filteredDrillData.value.forEach(d => {
     // Apply offset and then rotate
     const dx = d.x;
     const dy = d.y;

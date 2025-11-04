@@ -75,6 +75,7 @@ export const useDrillStore = defineStore("drill", {
     defaultYOffset: 0.0,
     defaultZOffset: 0.0,
     defaultSolderAllPoints: false,
+    viaFilterDiameter: 0.4, // Filter out drill holes smaller than this diameter (mm)
 
     // --- Profile management ---
     defaultProfileSettings: {
