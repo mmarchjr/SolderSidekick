@@ -430,14 +430,16 @@ const fitCanvasToBuildPlate = () => {
 
   // 10% padding around the build plate
   const padding = 0.1;
+  const bedWidth = drillStore.currentBedWidth;
+  const bedHeight = drillStore.currentBedHeight;
 
-  const scaleX = screenWidth / (235 * (1 + padding));
-  const scaleY = screenHeight / (235 * (1 + padding));
+  const scaleX = screenWidth / (bedWidth * (1 + padding));
+  const scaleY = screenHeight / (bedHeight * (1 + padding));
   scale = Math.min(scaleX, scaleY);
 
   // Center the build plate in the view
-  offsetX = screenWidth / 2 - (235 * scale) / 2;
-  offsetY = screenHeight / 2 + (235 * scale) / 2;
+  offsetX = screenWidth / 2 - (bedWidth * scale) / 2;
+  offsetY = screenHeight / 2 + (bedHeight * scale) / 2;
 
   updateCanvas();
 };
@@ -691,26 +693,10 @@ const setSelectedSolder = (state) => {
 const mirrorHorizontal = () => {
   drillStore.saveTransformUndoState();
 
-  const angle = (drillStore.rotation * Math.PI) / 180;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-
   const newDrillData = drillStore.drillData.map(d => {
-    const x = d.x;
-    const y = d.y;
-
-    // Rotate to canvas space
-    const rotatedX = x * cos - y * sin;
-    const rotatedY = x * sin + y * cos;
-
-    // Flip X in canvas space
-    const mirroredX = -rotatedX;
-
-    // Rotate back to PCB space
-    const newX = mirroredX * cos + rotatedY * sin;
-    const newY = -mirroredX * sin + rotatedY * cos;
-
-    return { ...d, x: newX, y: newY };
+    // Flip X in base coordinate space (no rotation compensation)
+    // Rotation will be applied separately during rendering and G-code generation
+    return { ...d, x: -d.x };
   });
 
   drillStore.drillData = newDrillData;
@@ -721,26 +707,10 @@ const mirrorHorizontal = () => {
 const mirrorVertical = () => {
   drillStore.saveTransformUndoState();
 
-  const angle = (drillStore.rotation * Math.PI) / 180;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-
   const newDrillData = drillStore.drillData.map(d => {
-    const x = d.x;
-    const y = d.y;
-
-    // Rotate to canvas space
-    const rotatedX = x * cos - y * sin;
-    const rotatedY = x * sin + y * cos;
-
-    // Flip Y in canvas space
-    const mirroredY = -rotatedY;
-
-    // Rotate back to PCB space
-    const newX = rotatedX * cos + mirroredY * sin;
-    const newY = -rotatedX * sin + mirroredY * cos;
-
-    return { ...d, x: newX, y: newY };
+    // Flip Y in base coordinate space (no rotation compensation)
+    // Rotation will be applied separately during rendering and G-code generation
+    return { ...d, y: -d.y };
   });
 
   drillStore.drillData = newDrillData;
@@ -831,12 +801,14 @@ const updateCanvas = () => {
   ctx.translate(offsetX, offsetY);
   ctx.scale(scale, scale);
 
-  // Draw build plate (235mm x 235mm)
+  // Draw build plate
+  const bedWidth = drillStore.currentBedWidth;
+  const bedHeight = drillStore.currentBedHeight;
   ctx.fillStyle = "#c9c9c9";
-  ctx.fillRect(0, -235, 235, 235);
+  ctx.fillRect(0, -bedHeight, bedWidth, bedHeight);
 
   // Draw 16mm grid lines clipped to print bed
-  drawClippedGrid(ctx, 235, 235, 16);
+  drawClippedGrid(ctx, bedWidth, bedHeight, 16);
 
   // 💡 Apply offset only to drill data
   ctx.translate(drillStore.originOffsetX, -drillStore.originOffsetY);

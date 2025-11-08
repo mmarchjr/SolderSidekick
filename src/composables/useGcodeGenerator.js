@@ -77,7 +77,8 @@ export function useGcodeGenerator() {
   function getSolderPoints() {
     // Get points in path order that have solder enabled
     const points = [];
-    const angle = (drillStore.rotation * Math.PI) / 180;
+    // Use negative rotation to match canvas rendering
+    const angle = -(drillStore.rotation * Math.PI) / 180;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
 
@@ -87,7 +88,7 @@ export function useGcodeGenerator() {
         // Apply rotation and offset transformations
         const rotatedX = drill.x * cos - drill.y * sin;
         const rotatedY = drill.x * sin + drill.y * cos;
-        
+
         points.push({
           ...drill,
           transformedX: rotatedX + drillStore.originOffsetX,
@@ -95,7 +96,7 @@ export function useGcodeGenerator() {
         });
       }
     }
-    
+
     return points;
   }
 

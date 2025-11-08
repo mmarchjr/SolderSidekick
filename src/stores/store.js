@@ -96,6 +96,8 @@ export const useDrillStore = defineStore("drill", {
       pointOffsetX: 0.0, // Additional X offset at each solder point
       pointOffsetY: 0.0, // Additional Y offset at each solder point
       pointOffsetZ: 0.0, // Additional Z offset at each solder point
+      bedWidth: 235, // Bed width in mm (default Ender-3)
+      bedHeight: 235, // Bed height in mm (default Ender-3)
       startGcode: startGcodeTemplate,
       perPointGcode: perPointTemplate,
       endGcode: endGcodeTemplate,
@@ -107,6 +109,12 @@ export const useDrillStore = defineStore("drill", {
     selectedPoints: (state) => state.drillData.filter(d => d.selected),
     currentPcbThickness: (state) => {
       return state.profiles[state.currentProfile]?.pcbThickness ?? state.pcbThickness;
+    },
+    currentBedWidth: (state) => {
+      return state.profiles[state.currentProfile]?.bedWidth ?? 235;
+    },
+    currentBedHeight: (state) => {
+      return state.profiles[state.currentProfile]?.bedHeight ?? 235;
     },
   },
   actions: {

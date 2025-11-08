@@ -55,6 +55,22 @@ const pcbThickness = computed({
   }
 });
 
+const bedWidth = computed({
+  get: () => drillStore.profiles[drillStore.currentProfile].bedWidth ?? 235,
+  set: (val) => {
+    drillStore.updateCurrentProfileSettings({ bedWidth: val });
+    drillStore.triggerCanvasUpdate();
+  }
+});
+
+const bedHeight = computed({
+  get: () => drillStore.profiles[drillStore.currentProfile].bedHeight ?? 235,
+  set: (val) => {
+    drillStore.updateCurrentProfileSettings({ bedHeight: val });
+    drillStore.triggerCanvasUpdate();
+  }
+});
+
 const startSafeZ = computed({
   get: () => drillStore.profiles[drillStore.currentProfile].startSafeZ,
   set: (val) => drillStore.updateCurrentProfileSettings({ startSafeZ: val })
@@ -174,6 +190,18 @@ function resetToDefaults() {
 
                 <label class="form-label mt-3" title="{PCB_THICKNESS}">PCB Thickness (mm)</label>
                 <input type="number" class="form-control" v-model="pcbThickness" step="0.1" />
+
+                <label class="form-label mt-3">Bed Size (mm)</label>
+                <div class="row">
+                  <div class="col-6">
+                    <label class="form-label form-label-sm">Width</label>
+                    <input type="number" class="form-control" v-model.number="bedWidth" step="1" min="1" />
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label form-label-sm">Height</label>
+                    <input type="number" class="form-control" v-model.number="bedHeight" step="1" min="1" />
+                  </div>
+                </div>
 
                 <label class="form-label mt-3" title="{START_SAFE_Z}">Start Safe Z</label>
                 <input type="number" class="form-control" v-model="startSafeZ" step="0.1" />
