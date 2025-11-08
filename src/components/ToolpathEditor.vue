@@ -217,7 +217,7 @@
                   class="form-control form-control-sm"
                   :value="hole.xOffset"
                   step="0.1"
-                  style="max-width: 70px;"
+                  style="max-width: 90px;"
                   @click.stop
                   @change="updateField(hole, 'xOffset', $event.target.valueAsNumber)"
                 />
@@ -228,7 +228,7 @@
                   class="form-control form-control-sm"
                   :value="hole.yOffset"
                   step="0.1"
-                  style="max-width: 70px;"
+                  style="max-width: 90px;"
                   @click.stop
                   @change="updateField(hole, 'yOffset', $event.target.valueAsNumber)"
                 />
@@ -239,7 +239,7 @@
                   class="form-control form-control-sm"
                   :value="hole.zOffset"
                   step="0.1"
-                  style="max-width: 70px;"
+                  style="max-width: 90px;"
                   @click.stop
                   @change="updateField(hole, 'zOffset', $event.target.valueAsNumber)"
                 />
@@ -1403,7 +1403,7 @@ function downloadExampleDrillFile() {
 }
 
 .right-panel {
-  width: 550px;
+  width: 650px;
   display: flex;
   flex-direction: column;
   position: relative;
