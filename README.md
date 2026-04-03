@@ -106,6 +106,45 @@ When a straight-line path between two solder points would cross a no-go zone, th
 
 ---
 
+## 🎬 G-code Simulator
+
+The built-in simulator lets you **preview the entire soldering run in 3D** before sending G-code to the printer.
+
+### Opening the simulator
+
+Click the **Simulate** button (next to "Save G-code") in the toolbar. A fullscreen modal opens with an interactive Three.js viewport.
+
+### What you'll see
+
+- **PCB board** rendered at the correct thickness from your profile settings
+- **Drill holes** (dark circles) and **solder pads** (copper rings) at the exact positions from your drill file
+- **No-go zones** shown as translucent red boxes
+- **Toolpath line** tracing the full G-code route
+- **Animated soldering iron** that moves through the G-code in real time — tilted 10° to match the physical iron angle, with a glowing tip effect when near the PCB surface
+
+### Playback controls
+
+- **Play / Pause** and **Restart** buttons
+- **Timeline scrubber** to jump to any point in the run
+- **Speed selector** (1×, 2×, 5×, 10×, 25×, 50×)
+- **M117 status messages** from the G-code are displayed in the header
+
+### Loading a custom 3D model (GLB/GLTF)
+
+You can optionally replace the default green PCB with an actual 3D model of your board and components:
+
+1. Click **Load 3D Model** in the simulator header
+2. Select a `.glb` or `.gltf` file — KiCad 8+ can export GLB directly, or convert STEP files using FreeCAD or online tools. The model is loaded at its native scale (no auto-scaling), so it should match your drill data if exported from the same design.
+3. Use the **Adjust Model** overlay panel (top-right of the viewport) to align the model:
+   - **Rotate** the model in 90° steps around the X, Y, or Z axis
+   - **Offset** the model along any axis with a selectable step size (0.1 / 0.5 / 1 / 5 mm)
+   - **Reset** to snap back to the initial position
+   - **Save** the adjustment settings to a `model-alignment.json` file so you can reuse them
+   - **Load** a previously saved settings file to instantly restore alignment — useful when you use the same GLB model and tooling across multiple sessions
+4. Click **Remove Model** to revert to the default generated PCB
+
+---
+
 ## 🚀 Getting Started Guide
 
 Ready to bring your Solder Sidekick™ to life?

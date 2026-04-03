@@ -9,10 +9,59 @@
           <span v-if="statusMessage" class="badge bg-info ms-3 text-truncate" style="max-width: 400px">
             {{ statusMessage }}
           </span>
+          <label class="btn btn-sm btn-outline-light ms-auto me-2" title="Load GLB/GLTF 3D model to replace the PCB">
+            <i class="fa-solid fa-cube me-1"></i>
+            <span v-if="!modelLoaded">Load 3D Model</span>
+            <span v-else>Replace Model</span>
+            <input type="file" accept=".glb,.gltf" class="d-none" @change="onModelFileSelected" />
+          </label>
+          <button v-if="modelLoaded" class="btn btn-sm btn-outline-danger me-2" @click="removeModel" title="Remove loaded model and restore default PCB">
+            <i class="fa-solid fa-xmark me-1"></i>Remove Model
+          </button>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
-        <div class="modal-body p-0 d-flex flex-column">
+        <div class="modal-body p-0 d-flex flex-column position-relative">
           <div ref="viewport" class="simulator-viewport flex-grow-1"></div>
+
+          <!-- Model adjustment overlay -->
+          <div v-if="modelLoaded" class="model-adjust-panel">
+            <div class="adj-header">
+              <span><i class="fa-solid fa-sliders me-1"></i>Adjust Model</span>
+              <button class="adj-reset-btn" @click="resetModelAdjust" title="Reset to auto-aligned position">
+                <i class="fa-solid fa-rotate-left"></i>
+              </button>
+            </div>
+            <div class="adj-section-label">Rotate</div>
+            <div class="adj-row" v-for="a in ['X','Y','Z']" :key="'r'+a">
+              <span class="adj-axis">{{ a }}</span>
+              <button class="adj-btn" @click="rotateModel(a, -1)">&minus;90&deg;</button>
+              <button class="adj-btn" @click="rotateModel(a, 1)">+90&deg;</button>
+            </div>
+            <div class="adj-section-label mt-2">
+              Offset
+              <select v-model.number="offsetStep" class="adj-step-select">
+                <option :value="0.1">0.1 mm</option>
+                <option :value="0.5">0.5 mm</option>
+                <option :value="1">1 mm</option>
+                <option :value="5">5 mm</option>
+              </select>
+            </div>
+            <div class="adj-row" v-for="a in ['X','Y','Z']" :key="'o'+a">
+              <span class="adj-axis">{{ a }}</span>
+              <button class="adj-btn" @click="offsetModel(a, -1)">&minus;</button>
+              <button class="adj-btn" @click="offsetModel(a, 1)">+</button>
+            </div>
+            <div class="adj-save-row">
+              <button class="adj-btn adj-save-btn" @click="saveModelSettings" title="Save adjustment settings to JSON file">
+                <i class="fa-solid fa-download me-1"></i>Save
+              </button>
+              <label class="adj-btn adj-save-btn" title="Load adjustment settings from JSON file">
+                <i class="fa-solid fa-upload me-1"></i>Load
+                <input type="file" accept=".json" class="d-none" @change="loadModelSettings" />
+              </label>
+            </div>
+          </div>
+
           <div class="simulator-controls bg-dark border-top border-secondary px-3 py-2 d-flex align-items-center gap-3">
             <button class="btn btn-sm btn-outline-light" @click="restart" title="Restart">
               <i class="fa-solid fa-backward-fast"></i>
@@ -49,6 +98,7 @@
 import { ref, onBeforeUnmount } from 'vue';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Modal } from 'bootstrap';
 import { useDrillStore } from '@/stores/store';
 
@@ -62,9 +112,15 @@ const currentTime = ref(0);
 const totalTime = ref(1);
 const playbackSpeed = ref(10);
 const statusMessage = ref('');
+const modelLoaded = ref(false);
+const offsetStep = ref(1);
 
 let scene, camera, renderer, controls, animationId, resizeObserver;
 let ironGroup, tipMat, tipLight, shadowDisc;
+let pcbGroup = null;
+let loadedModelGroup = null;
+let modelPivot = null;
+let modelBasePos = null;
 let timeline = [];
 let lastTimestamp = null;
 let bsModal = null;
@@ -255,7 +311,40 @@ function getPCBBounds() {
   };
 }
 
+function removePCBGroup() {
+  if (pcbGroup) {
+    scene.remove(pcbGroup);
+    pcbGroup.traverse(obj => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(m => m.dispose());
+      }
+    });
+    pcbGroup = null;
+  }
+}
+
+function removeLoadedModel() {
+  if (modelPivot) {
+    scene.remove(modelPivot);
+    modelPivot.traverse(obj => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(m => m.dispose());
+      }
+    });
+    modelPivot = null;
+  }
+  loadedModelGroup = null;
+  modelBasePos = null;
+}
+
 function buildPCB() {
+  removePCBGroup();
+  pcbGroup = new THREE.Group();
+
   const b = getPCBBounds();
   const pw = b.maxX - b.minX;
   const ph = b.maxY - b.minY;
@@ -266,7 +355,7 @@ function buildPCB() {
   const pcbMat = new THREE.MeshStandardMaterial({ color: 0x1a7a3a, roughness: 0.6, metalness: 0.1 });
   const pcb = new THREE.Mesh(pcbGeom, pcbMat);
   pcb.position.set(b.minX + pw / 2, b.minY + ph / 2, -thick / 2);
-  scene.add(pcb);
+  pcbGroup.add(pcb);
 
   // Drill holes as dark circles on surface
   const allBed = drillStore.drillData.map(d => ({ bed: drillStore.drillToBedSpace(d), ...d }));
@@ -280,7 +369,7 @@ function buildPCB() {
       dummy.updateMatrix();
       holes.setMatrixAt(i, dummy.matrix);
     }
-    scene.add(holes);
+    pcbGroup.add(holes);
   }
 
   // Solder point markers (copper rings)
@@ -299,10 +388,12 @@ function buildPCB() {
       dummy.updateMatrix();
       rings.setMatrixAt(i, dummy.matrix);
     }
-    scene.add(rings);
+    pcbGroup.add(rings);
   }
 
-  // No-go zones
+  scene.add(pcbGroup);
+
+  // No-go zones (stay on scene, not in pcbGroup)
   for (const z of drillStore.noGoZones) {
     const zw = z.x2 - z.x1;
     const zh = z.y2 - z.y1;
@@ -315,7 +406,7 @@ function buildPCB() {
     scene.add(zone);
   }
 
-  // Reference grid below PCB
+  // Reference grid below PCB (stays on scene)
   const gridSize = Math.max(pw, ph) * 2;
   const grid = new THREE.GridHelper(gridSize, Math.round(gridSize / 10), 0x333355, 0x222244);
   grid.rotation.x = Math.PI / 2;
@@ -371,6 +462,141 @@ function buildIronTip() {
   shadowDisc = new THREE.Mesh(shadowGeom, shadowMat);
   shadowDisc.position.z = 0.01;
   scene.add(shadowDisc);
+}
+
+// ── GLB/GLTF Model Loading ───────────────────────────────────
+
+function onModelFileSelected(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file || !scene) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const loader = new GLTFLoader();
+    loader.parse(reader.result, '', (gltf) => {
+      removePCBGroup();
+      removeLoadedModel();
+
+      loadedModelGroup = gltf.scene;
+
+      // GLTF is Y-up; our scene is Z-up — rotate -90° around X
+      loadedModelGroup.rotation.x = -Math.PI / 2;
+      loadedModelGroup.updateMatrixWorld(true);
+
+      // Compute bounding box to find the model's center for the pivot
+      const box = new THREE.Box3().setFromObject(loadedModelGroup);
+      const center = box.getCenter(new THREE.Vector3());
+
+      // Wrap in a pivot group at the model's center for user rotation/offset
+      modelPivot = new THREE.Group();
+      modelPivot.position.copy(center);
+      modelBasePos = { x: center.x, y: center.y, z: center.z };
+
+      // Offset model so its center sits at the pivot origin
+      loadedModelGroup.position.x -= center.x;
+      loadedModelGroup.position.y -= center.y;
+      loadedModelGroup.position.z -= center.z;
+
+      modelPivot.add(loadedModelGroup);
+      scene.add(modelPivot);
+      modelLoaded.value = true;
+    }, (err) => {
+      console.error('Failed to load GLTF model:', err);
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function removeModel() {
+  removeLoadedModel();
+  modelLoaded.value = false;
+  if (scene) buildPCB();
+}
+
+function rotateModel(axis, dir) {
+  if (!modelPivot) return;
+  const angle = dir * Math.PI / 2;
+  switch (axis) {
+    case 'X': modelPivot.rotation.x += angle; break;
+    case 'Y': modelPivot.rotation.y += angle; break;
+    case 'Z': modelPivot.rotation.z += angle; break;
+  }
+}
+
+function offsetModel(axis, dir) {
+  if (!modelPivot) return;
+  const d = dir * offsetStep.value;
+  switch (axis) {
+    case 'X': modelPivot.position.x += d; break;
+    case 'Y': modelPivot.position.y += d; break;
+    case 'Z': modelPivot.position.z += d; break;
+  }
+}
+
+function resetModelAdjust() {
+  if (!modelPivot || !modelBasePos) return;
+  modelPivot.position.set(modelBasePos.x, modelBasePos.y, modelBasePos.z);
+  modelPivot.rotation.set(0, 0, 0);
+}
+
+function getModelAdjustments() {
+  if (!modelPivot || !modelBasePos) return null;
+  return {
+    rotation: {
+      x: modelPivot.rotation.x,
+      y: modelPivot.rotation.y,
+      z: modelPivot.rotation.z,
+    },
+    offset: {
+      x: modelPivot.position.x - modelBasePos.x,
+      y: modelPivot.position.y - modelBasePos.y,
+      z: modelPivot.position.z - modelBasePos.z,
+    },
+  };
+}
+
+function applyModelAdjustments(adj) {
+  if (!modelPivot || !modelBasePos || !adj) return;
+  if (adj.rotation) {
+    modelPivot.rotation.set(adj.rotation.x ?? 0, adj.rotation.y ?? 0, adj.rotation.z ?? 0);
+  }
+  if (adj.offset) {
+    modelPivot.position.set(
+      modelBasePos.x + (adj.offset.x ?? 0),
+      modelBasePos.y + (adj.offset.y ?? 0),
+      modelBasePos.z + (adj.offset.z ?? 0),
+    );
+  }
+}
+
+function saveModelSettings() {
+  const adj = getModelAdjustments();
+  if (!adj) return;
+  const json = JSON.stringify(adj, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'model-alignment.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function loadModelSettings(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const adj = JSON.parse(reader.result);
+      applyModelAdjustments(adj);
+    } catch (e) {
+      console.error('Failed to parse model settings:', e);
+    }
+  };
+  reader.readAsText(file);
 }
 
 // ── Animation Loop ───────────────────────────────────────────
@@ -479,6 +705,11 @@ function cleanup() {
   tipMat = null;
   tipLight = null;
   shadowDisc = null;
+  pcbGroup = null;
+  loadedModelGroup = null;
+  modelPivot = null;
+  modelBasePos = null;
+  modelLoaded.value = false;
   timeline = [];
 }
 
@@ -508,5 +739,118 @@ defineExpose({ show });
   width: 16px;
   height: 16px;
   margin-top: -5px;
+}
+
+/* Model adjustment overlay */
+.model-adjust-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  background: rgba(20, 20, 35, 0.88);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #ccc;
+  font-size: 12px;
+  width: 180px;
+  user-select: none;
+}
+
+.adj-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #eee;
+}
+
+.adj-reset-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #aaa;
+  border-radius: 4px;
+  padding: 1px 6px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.adj-reset-btn:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.adj-section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adj-step-select {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ccc;
+  border-radius: 4px;
+  font-size: 10px;
+  padding: 0 2px;
+  height: 20px;
+  margin-left: auto;
+}
+
+.adj-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 3px;
+}
+
+.adj-axis {
+  width: 16px;
+  font-weight: 700;
+  font-size: 11px;
+  color: #aaa;
+}
+
+.adj-btn {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ccc;
+  border-radius: 4px;
+  padding: 2px 0;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: center;
+  line-height: 1.4;
+}
+.adj-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+.adj-btn:active {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.adj-save-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.adj-save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 </style>

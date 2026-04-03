@@ -39,7 +39,8 @@ No linting or formatting tools are configured. Consider adding ESLint and Pretti
 2. **Core Functionality**:
    - **File Processing**: `src/composables/useFileHandlers.js` - Parses Excellon drill files
    - **G-code Generation**: `src/composables/useGcodeGenerator.js` - Converts drill points to G-code using customizable templates
-   - **3D Visualization**: `src/components/ToolpathEditor.vue` - Interactive Three.js scene for PCB preview
+   - **2D Visualization**: `src/components/ToolpathEditor.vue` - Interactive canvas editor for PCB preview and path editing
+   - **3D Simulator**: `src/components/GcodeSimulator.vue` - Three.js G-code simulator with animated soldering iron, playback controls, and optional GLB/GLTF model loading
 
 3. **Main Views**:
    - **HomeView**: Main toolpath editor interface
@@ -51,7 +52,7 @@ No linting or formatting tools are configured. Consider adding ESLint and Pretti
 3. Points are optimized using nearest-neighbor algorithm (with no-go zone avoidance)
 4. G-code is generated using customizable templates (start, per-point, end)
 5. Waypoint G0 rapid moves are inserted between solder points when the path must route around no-go zones
-6. User can preview in 2D canvas and download the result
+6. User can preview in 2D canvas, simulate in 3D, and download the result
 
 ### Important Implementation Details
 
@@ -62,6 +63,8 @@ No linting or formatting tools are configured. Consider adding ESLint and Pretti
 - **Mobile Support**: Detects mobile devices and shows appropriate messaging
 - **Analytics**: Includes Google Analytics and Facebook Pixel integration
 - **Persistence**: All configuration and profiles stored in localStorage via Pinia plugin
+- **G-code Simulator**: `GcodeSimulator.vue` parses actual G-code (G0/G1 moves, G4 dwells, G92 origin, M117 messages) to animate a soldering iron in a Three.js scene. Uses `requestAnimationFrame` with timeline interpolation. The iron is tilted 10° to match the physical setup. Scene uses Z-up convention.
+- **GLB/GLTF Model Loading**: The simulator supports optional loading of a GLB/GLTF file to replace the default generated PCB. Uses Three.js's built-in `GLTFLoader`. The model is rotated from Y-up (GLTF convention) to Z-up but loaded at its native scale (no auto-scaling). PCB-related objects are grouped in a `pcbGroup` for easy removal/replacement. The loaded model is wrapped in a `modelPivot` group (centered on the model's bounding box) that supports user-controlled 90° rotation steps and mm-level offset adjustments via an overlay panel. Adjustment settings (rotation + offset relative to base) can be saved/loaded as a `model-alignment.json` file for reuse across sessions.
 
 ## Development Notes
 
