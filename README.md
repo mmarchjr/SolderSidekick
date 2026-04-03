@@ -74,6 +74,38 @@ You can find the gerber and drill files for the example [**PCB Breadboard**](./e
 
 ---
 
+## 🚫 No-Go Zones
+
+No-Go Zones let you mark **rectangular areas on the build plate** that the soldering path must avoid — for example, where clamps, fixtures, or tall components block the soldering iron.
+
+### How it works
+
+1. Click the **No-Go Zone** button in the toolbar (it turns red when active, and the cursor becomes a crosshair)
+2. **Click and drag** on the canvas to draw a rectangular exclusion area
+3. Draw as many zones as you need — each is shown as a hatched red rectangle labeled "NO-GO"
+4. **Click on an existing zone** (while in No-Go mode) to **delete** it
+5. Click the **No-Go Zone** button again to exit drawing mode
+
+### Effect on path generation
+
+- **Auto Optimize Path** will never route the travel path through a no-go zone. When the direct line between two solder points crosses a zone, the path is automatically routed around the zone corners using the shortest detour.
+- **Points inside a no-go zone** are excluded from the optimized path entirely.
+- **Manually added points** (clicked directly on the canvas) are unaffected — no-go zones only filter the auto optimizer.
+- The **Optimize Selection** command also respects no-go zones when ordering selected points.
+- No-go zones are **saved and loaded** with project files (`.soldersidekick.json`).
+
+### How the routing works
+
+When a straight-line path between two solder points would cross a no-go zone, the system computes the shortest clear detour around it:
+
+1. The offset corners of each zone (with a small clearance margin) serve as potential waypoints
+2. A visibility graph is built — two waypoints are connected only if the line between them doesn't cross any zone
+3. Dijkstra's shortest-path algorithm finds the optimal route through the waypoints
+4. The resulting detour waypoints appear as **orange diamond markers** on the canvas
+5. In the generated G-code, the detour is emitted as `G0` rapid moves at safe Z height between solder points
+
+---
+
 ## 🚀 Getting Started Guide
 
 Ready to bring your Solder Sidekick™ to life?

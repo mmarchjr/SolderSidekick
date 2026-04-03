@@ -48,14 +48,16 @@ No linting or formatting tools are configured. Consider adding ESLint and Pretti
 ### G-code Generation Flow
 1. User uploads Excellon drill file
 2. File is parsed to extract drill coordinates
-3. Points are optimized using nearest-neighbor algorithm
+3. Points are optimized using nearest-neighbor algorithm (with no-go zone avoidance)
 4. G-code is generated using customizable templates (start, per-point, end)
-5. User can preview in 3D and download the result
+5. Waypoint G0 rapid moves are inserted between solder points when the path must route around no-go zones
+6. User can preview in 2D canvas and download the result
 
 ### Important Implementation Details
 
 - **Coordinate System**: Uses Three.js coordinate system with transformations for PCB visualization
-- **Path Optimization**: Implements nearest-neighbor algorithm for efficient soldering paths
+- **Path Optimization**: Implements nearest-neighbor algorithm for efficient soldering paths, with no-go zone avoidance using visibility graph + Dijkstra shortest path routing
+- **No-Go Zones**: Rectangular exclusion areas (bed coordinate space) that the path must avoid. Stored in `drillStore.noGoZones`. Points inside zones are excluded; path segments crossing zones are routed around zone corners via `computeRouteAroundZones()`. Waypoints appear in both canvas rendering and G-code output.
 - **Templates**: G-code templates support variable substitution for coordinates and offsets
 - **Mobile Support**: Detects mobile devices and shows appropriate messaging
 - **Analytics**: Includes Google Analytics and Facebook Pixel integration
