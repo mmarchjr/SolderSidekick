@@ -271,14 +271,13 @@
         </div>
       </div>
 
-      <div class="bottom-button-container">
-         
-
-                 <!-- Save G-code Button -->
+      <div class="bottom-button-container d-flex">
+  <button class="simulate-button btn btn-primary" @click="openSimulator">
+    <i class="fa-solid fa-play me-1"></i> Simulate
+  </button>
   <button class="save-button btn btn-success" @click="saveGcode">
     <i class="fa-solid fa-save me-1"></i> Save G-code
   </button>
-
       </div>
 
 
@@ -287,11 +286,13 @@
     </div>
 
 <GettingStarted ref="introModal" />
+<GcodeSimulator ref="simulatorRef" />
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick  } from "vue";
 import GettingStarted from "@/components/GettingStarted.vue";
+import GcodeSimulator from "@/components/GcodeSimulator.vue";
 import ProfileManager from '@/components/ProfileManager.vue';
 import { useDrillStore } from "@/stores/store";
 import { useFileHandlers } from "@/composables/useFileHandlers";
@@ -302,6 +303,7 @@ const { generateGcode, saveGcodeFile } = useGcodeGenerator();
 
 const drillStore = useDrillStore();
 const canvas = ref(null);
+const simulatorRef = ref(null);
 
 // Profile selection
 const selectedProfile = computed({
@@ -414,6 +416,26 @@ const saveGcode = () => {
   } catch (error) {
     console.error("Error generating G-code:", error);
     alert(`Error generating G-code: ${error.message}`);
+  }
+};
+
+const openSimulator = () => {
+  try {
+    const profile = drillStore.profiles[drillStore.currentProfile];
+    if (profile.zeroX === null || profile.zeroY === null || profile.zeroZ === null) {
+      alert("Please set the Origin X, Y, and Z values before simulating.");
+      return;
+    }
+    const solderPoints = drillStore.drillData.filter(d => d.solder && drillStore.path.includes(d.id));
+    if (solderPoints.length === 0) {
+      alert("No solder points selected! Please select points to solder.");
+      return;
+    }
+    const gcode = generateGcode();
+    simulatorRef.value.show(gcode);
+  } catch (error) {
+    console.error("Error opening simulator:", error);
+    alert(`Error: ${error.message}`);
   }
 };
 
@@ -1630,17 +1652,18 @@ function downloadExampleDrillFile() {
   /* margin-bottom: 3.5rem; */
 }
 
-.save-button {
- 
+.save-button,
+.simulate-button {
   display: flex;
-  align-items: center;      /* vertical centering */
-  justify-content: center;  /* horizontal centering */
-  width: 100%;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
   height: 4rem;
   padding: 0.5rem 1rem;
-  gap: 0.5rem;               /* spacing between icon and text */
+  gap: 0.5rem;
   font-weight: 600;
   font-size: 1.1rem;
+  border-radius: 0;
 }
 
 .bottom-button-container{
