@@ -42,9 +42,6 @@
       <button class="btn" :class="isDrawingNoGoZone ? 'btn-danger' : 'btn-outline-danger'" @click="toggleNoGoZoneMode">
         <i class="fa-solid fa-ban"></i> No-Go Zone
       </button>
-      <button v-if="drillStore.noGoZones.length > 0" class="btn btn-outline-danger btn-sm" @click="clearNoGoZones" :title="'Remove all ' + drillStore.noGoZones.length + ' no-go zone(s)'">
-        <i class="fa-solid fa-trash"></i> {{ drillStore.noGoZones.length }}
-      </button>
 
       <label class="form-label">Solder</label>
       <button class="btn btn-success" @click="setSelectedSolder(true)"><i class="fa-solid fa-check"></i></button>
@@ -375,6 +372,7 @@ const isDrawingNoGoZone = ref(false);
 let isDrawingNoGoRect = false;
 let noGoZoneStart = null;
 let noGoZoneEnd = null;
+let resizingZone = null;
 
 // Origin calculator state
 const showOriginCalculator = ref(false);
@@ -912,19 +910,19 @@ const drawNoGoZones = (ctx) => {
 
   if (zones.length === 0) return;
 
+  const editMode = isDrawingNoGoZone.value;
+
   for (const z of zones) {
     const x = z.x1;
-    const y = -z.y2; // flip Y for canvas
+    const y = -z.y2;
     const w = z.x2 - z.x1;
     const h = z.y2 - z.y1;
 
     ctx.save();
 
-    // Fill
     ctx.fillStyle = "rgba(255, 60, 60, 0.18)";
     ctx.fillRect(x, y, w, h);
 
-    // Hatching
     ctx.beginPath();
     ctx.rect(x, y, w, h);
     ctx.clip();
@@ -941,14 +939,12 @@ const drawNoGoZones = (ctx) => {
 
     ctx.restore();
 
-    // Border
     ctx.strokeStyle = "rgba(220, 40, 40, 0.7)";
     ctx.lineWidth = 1.5 / scale;
     ctx.setLineDash([4 / scale, 3 / scale]);
     ctx.strokeRect(x, y, w, h);
     ctx.setLineDash([]);
 
-    // "No-Go" label
     if (w * scale > 50 && h * scale > 20) {
       ctx.save();
       const fontSize = Math.min(12 / scale, h * 0.4, w * 0.2);
@@ -957,6 +953,45 @@ const drawNoGoZones = (ctx) => {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("NO-GO", x + w / 2, y + h / 2);
+      ctx.restore();
+    }
+
+    if (editMode && z.id !== 'preview') {
+      const hs = 3.5 / scale;
+      const cx = (z.x1 + z.x2) / 2;
+      const cy = (z.y1 + z.y2) / 2;
+      const handlePositions = [
+        z.x1, z.y1, z.x2, z.y1, z.x1, z.y2, z.x2, z.y2,
+        cx, z.y1, cx, z.y2, z.x1, cy, z.x2, cy,
+      ];
+      ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+      ctx.strokeStyle = "rgba(180, 30, 30, 0.85)";
+      ctx.lineWidth = 1.2 / scale;
+      for (let i = 0; i < handlePositions.length; i += 2) {
+        const hx = handlePositions[i];
+        const hy = -handlePositions[i + 1];
+        ctx.fillRect(hx - hs, hy - hs, hs * 2, hs * 2);
+        ctx.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2);
+      }
+
+      // Delete button at top-right corner
+      const btnR = 7 / scale;
+      const btnX = z.x2 + btnR * 0.3;
+      const btnY = -(z.y2 + btnR * 0.3);
+      ctx.save();
+      ctx.fillStyle = "rgba(200, 40, 40, 0.92)";
+      ctx.beginPath();
+      ctx.arc(btnX, btnY, btnR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.5 / scale;
+      const xOff = btnR * 0.45;
+      ctx.beginPath();
+      ctx.moveTo(btnX - xOff, btnY - xOff);
+      ctx.lineTo(btnX + xOff, btnY + xOff);
+      ctx.moveTo(btnX + xOff, btnY - xOff);
+      ctx.lineTo(btnX - xOff, btnY + xOff);
+      ctx.stroke();
       ctx.restore();
     }
   }
@@ -1193,12 +1228,17 @@ const handleMouseDown = (e) => {
 
   const mouse = getMousePosition(e, false); // don't apply offset
 
-  // No-go zone drawing mode (left-click only, allow right-click panning)
+  // No-go zone edit mode (left-click only, allow right-click panning)
   if (isDrawingNoGoZone.value && e.button === 0) {
-    const clicked = findNoGoZoneAtPoint(mouse);
-    if (clicked) {
-      drillStore.removeNoGoZone(clicked.id);
+    const delId = findNoGoDeleteBtn(mouse);
+    if (delId) {
+      drillStore.removeNoGoZone(delId);
       updateCanvas();
+      return;
+    }
+    const handle = findResizeHandle(mouse);
+    if (handle) {
+      resizingZone = handle;
       return;
     }
     isDrawingNoGoRect = true;
@@ -1281,6 +1321,23 @@ updateCanvas();
 };
 
 const handleMouseMove = (e) => {
+  if (resizingZone) {
+    const mouse = getMousePosition(e, false);
+    const z = drillStore.noGoZones.find(zn => zn.id === resizingZone.zoneId);
+    if (z) {
+      const nb = { ...resizingZone.orig };
+      for (const p of resizingZone.dragProps) {
+        if (p === 'x1' || p === 'x2') nb[p] = mouse.x;
+        if (p === 'y1' || p === 'y2') nb[p] = mouse.y;
+      }
+      z.x1 = Math.min(nb.x1, nb.x2);
+      z.y1 = Math.min(nb.y1, nb.y2);
+      z.x2 = Math.max(nb.x1, nb.x2);
+      z.y2 = Math.max(nb.y1, nb.y2);
+    }
+    updateCanvas();
+    return;
+  }
   if (isDrawingNoGoRect && noGoZoneStart) {
     noGoZoneEnd = getMousePosition(e, false);
     updateCanvas();
@@ -1315,6 +1372,12 @@ const handleMouseMove = (e) => {
 };
 
 const handleMouseUp = () => {
+
+  if (resizingZone) {
+    resizingZone = null;
+    updateCanvas();
+    return;
+  }
 
   if (isDrawingNoGoRect && noGoZoneStart && noGoZoneEnd) {
     const w = Math.abs(noGoZoneEnd.x - noGoZoneStart.x);
@@ -1460,18 +1523,46 @@ const toggleNoGoZoneMode = () => {
   isDrawingNoGoRect = false;
   noGoZoneStart = null;
   noGoZoneEnd = null;
+  resizingZone = null;
 };
 
-const clearNoGoZones = () => {
-  drillStore.clearNoGoZones();
-  updateCanvas();
-};
-
-const findNoGoZoneAtPoint = (pt) => {
+const findNoGoDeleteBtn = (pt) => {
+  const btnR = 7 / scale;
   for (let i = drillStore.noGoZones.length - 1; i >= 0; i--) {
     const z = drillStore.noGoZones[i];
-    if (pt.x >= z.x1 && pt.x <= z.x2 && pt.y >= z.y1 && pt.y <= z.y2) {
-      return z;
+    const btnX = z.x2 + btnR * 0.3;
+    const btnY = z.y2 + btnR * 0.3;
+    if (Math.hypot(pt.x - btnX, pt.y - btnY) < btnR * 1.5) {
+      return z.id;
+    }
+  }
+  return null;
+};
+
+const findResizeHandle = (pt) => {
+  const hitR = 5 / scale;
+  for (let i = drillStore.noGoZones.length - 1; i >= 0; i--) {
+    const z = drillStore.noGoZones[i];
+    const cx = (z.x1 + z.x2) / 2;
+    const cy = (z.y1 + z.y2) / 2;
+    const handles = [
+      { hx: z.x1, hy: z.y1, dp: ['x1', 'y1'] },
+      { hx: z.x2, hy: z.y1, dp: ['x2', 'y1'] },
+      { hx: z.x1, hy: z.y2, dp: ['x1', 'y2'] },
+      { hx: z.x2, hy: z.y2, dp: ['x2', 'y2'] },
+      { hx: cx, hy: z.y1, dp: ['y1'] },
+      { hx: cx, hy: z.y2, dp: ['y2'] },
+      { hx: z.x1, hy: cy, dp: ['x1'] },
+      { hx: z.x2, hy: cy, dp: ['x2'] },
+    ];
+    for (const h of handles) {
+      if (Math.abs(pt.x - h.hx) < hitR && Math.abs(pt.y - h.hy) < hitR) {
+        return {
+          zoneId: z.id,
+          dragProps: h.dp,
+          orig: { x1: z.x1, y1: z.y1, x2: z.x2, y2: z.y2 },
+        };
+      }
     }
   }
   return null;

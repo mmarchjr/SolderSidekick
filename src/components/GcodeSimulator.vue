@@ -9,11 +9,11 @@
           <span v-if="statusMessage" class="badge bg-info ms-3 text-truncate" style="max-width: 400px">
             {{ statusMessage }}
           </span>
-          <label class="btn btn-sm btn-outline-light ms-auto me-2" title="Load GLB/GLTF 3D model to replace the PCB">
+          <label class="btn btn-sm btn-outline-light ms-auto me-2" title="Load 3D model (GLB, GLTF, STL, STEP, or IGES) to replace the PCB">
             <i class="fa-solid fa-cube me-1"></i>
             <span v-if="!modelLoaded">Load 3D Model</span>
             <span v-else>Replace Model</span>
-            <input type="file" accept=".glb,.gltf" class="d-none" @change="onModelFileSelected" />
+            <input type="file" accept=".glb,.gltf,.stl,.step,.stp,.iges,.igs" class="d-none" @change="onModelFileSelected" />
           </label>
           <button v-if="modelLoaded" class="btn btn-sm btn-outline-danger me-2" @click="removeModel" title="Remove loaded model and restore default PCB">
             <i class="fa-solid fa-xmark me-1"></i>Remove Model
@@ -22,6 +22,18 @@
         </div>
         <div class="modal-body p-0 d-flex flex-column position-relative">
           <div ref="viewport" class="simulator-viewport flex-grow-1"></div>
+
+          <!-- STEP/IGES loading overlay -->
+          <div v-if="stepLoading" class="step-loading-overlay">
+            <div class="step-loading-card">
+              <i class="fa-solid fa-gear fa-spin me-2"></i>
+              <span class="step-loading-title">{{ stepLoadingPhase }}</span>
+              <div class="step-progress-track">
+                <div class="step-progress-bar"></div>
+              </div>
+              <span class="step-loading-hint">STEP/IGES files can take 10–60 s depending on complexity</span>
+            </div>
+          </div>
 
           <!-- Model adjustment overlay -->
           <div v-if="modelLoaded" class="model-adjust-panel">
@@ -66,15 +78,35 @@
             <button class="btn btn-sm btn-outline-light" @click="restart" title="Restart">
               <i class="fa-solid fa-backward-fast"></i>
             </button>
+            <button class="btn btn-sm btn-outline-light" @click="prevSolderPoint" title="Previous solder point">
+              <i class="fa-solid fa-backward-step"></i>
+            </button>
             <button class="btn btn-sm" :class="isPlaying ? 'btn-warning' : 'btn-success'" @click="togglePlay" style="width:42px">
               <i :class="isPlaying ? 'fa-solid fa-pause' : 'fa-solid fa-play'"></i>
             </button>
-            <input
-              type="range" class="form-range flex-grow-1 mx-2"
-              min="0" :max="totalTime" step="0.01"
-              :value="currentTime"
-              @input="seekTo($event.target.valueAsNumber)"
-            />
+            <button class="btn btn-sm btn-outline-light" @click="nextSolderPoint" title="Next solder point">
+              <i class="fa-solid fa-forward-step"></i>
+            </button>
+            <div class="timeline-wrapper flex-grow-1 mx-2">
+              <input
+                type="range" class="form-range"
+                min="0" :max="totalTime" step="0.01"
+                :value="currentTime"
+                @input="seekTo($event.target.valueAsNumber)"
+              />
+              <div class="timeline-markers">
+                <div
+                  v-for="(sp, i) in solderPointTimes" :key="i"
+                  class="timeline-tick"
+                  :style="{ left: (sp / totalTime * 100) + '%' }"
+                  :title="'Point ' + (i + 1)"
+                  @click="seekTo(sp)"
+                ></div>
+              </div>
+            </div>
+            <span v-if="solderPointTimes.length > 0" class="text-warning text-nowrap small" style="min-width: 52px">
+              {{ currentPointIndex }}/{{ solderPointTimes.length }}
+            </span>
             <span class="text-white text-nowrap small" style="min-width: 100px">
               {{ formatTime(currentTime) }} / {{ formatTime(totalTime) }}
             </span>
@@ -95,10 +127,11 @@
 </template>
 
 <script setup>
-import { ref, onBeforeUnmount } from 'vue';
+import { ref, computed, nextTick, onBeforeUnmount } from 'vue';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { Modal } from 'bootstrap';
 import { useDrillStore } from '@/stores/store';
 
@@ -114,6 +147,20 @@ const playbackSpeed = ref(10);
 const statusMessage = ref('');
 const modelLoaded = ref(false);
 const offsetStep = ref(1);
+const solderPointTimes = ref([]);
+const stepLoading = ref(false);
+const stepLoadingPhase = ref('');
+
+const currentPointIndex = computed(() => {
+  const pts = solderPointTimes.value;
+  const t = currentTime.value;
+  let idx = 0;
+  for (const p of pts) {
+    if (p <= t + 0.05) idx++;
+    else break;
+  }
+  return idx;
+});
 
 let scene, camera, renderer, controls, animationId, resizeObserver;
 let ironGroup, tipMat, tipLight, shadowDisc;
@@ -241,17 +288,33 @@ function initScene(gcode) {
   isPlaying.value = false;
   statusMessage.value = '';
 
+  // Extract one timestamp per solder point (skip duplicate dwells at same XY)
+  const spTimes = [];
+  let lastSpKey = '';
+  for (const c of timeline) {
+    if (c.type === 'dwell' && c.z < 2) {
+      const key = `${c.x.toFixed(2)},${c.y.toFixed(2)}`;
+      if (key !== lastSpKey) {
+        spTimes.push(c.startTime);
+        lastSpKey = key;
+      }
+    } else if (c.type === 'move') {
+      lastSpKey = '';
+    }
+  }
+  solderPointTimes.value = spTimes;
+
   const container = viewport.value;
   if (!container) return;
 
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1a1a2e);
+  scene.background = new THREE.Color(0x2a2a3e);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-  const dir1 = new THREE.DirectionalLight(0xffffff, 0.9);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dir1 = new THREE.DirectionalLight(0xffffff, 0.8);
   dir1.position.set(80, 60, 120);
   scene.add(dir1);
-  const dir2 = new THREE.DirectionalLight(0xffffff, 0.3);
+  const dir2 = new THREE.DirectionalLight(0xffffff, 0.35);
   dir2.position.set(-60, -40, 80);
   scene.add(dir2);
 
@@ -341,6 +404,39 @@ function removeLoadedModel() {
   modelBasePos = null;
 }
 
+function createBuildPlateTexture() {
+  const tileSize = 128;
+  const mmPerTile = 16;
+  const px = tileSize / mmPerTile;
+  const c = document.createElement('canvas');
+  c.width = tileSize;
+  c.height = tileSize;
+  const g = c.getContext('2d');
+
+  g.fillStyle = '#c9c9c9';
+  g.fillRect(0, 0, tileSize, tileSize);
+
+  // Grid lines at tile edges
+  g.strokeStyle = '#aaaaaa';
+  g.lineWidth = 1;
+  g.strokeRect(0, 0, tileSize, tileSize);
+
+  // Holes at 8mm spacing, offset 4mm from edges (matching 2D brick pattern)
+  g.fillStyle = '#b0b0b0';
+  for (const cx of [4, 12]) {
+    for (const cy of [4, 12]) {
+      g.beginPath();
+      g.arc(cx * px, cy * px, 2.5 * px, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
 function buildPCB() {
   removePCBGroup();
   pcbGroup = new THREE.Group();
@@ -350,9 +446,9 @@ function buildPCB() {
   const ph = b.maxY - b.minY;
   const thick = drillStore.profiles[drillStore.currentProfile]?.pcbThickness ?? 1.6;
 
-  // PCB board
+  // PCB board (green, matching 2D branding)
   const pcbGeom = new THREE.BoxGeometry(pw, ph, thick);
-  const pcbMat = new THREE.MeshStandardMaterial({ color: 0x1a7a3a, roughness: 0.6, metalness: 0.1 });
+  const pcbMat = new THREE.MeshStandardMaterial({ color: 0x1b8a3e, roughness: 0.55, metalness: 0.05 });
   const pcb = new THREE.Mesh(pcbGeom, pcbMat);
   pcb.position.set(b.minX + pw / 2, b.minY + ph / 2, -thick / 2);
   pcbGroup.add(pcb);
@@ -361,7 +457,7 @@ function buildPCB() {
   const allBed = drillStore.drillData.map(d => ({ bed: drillStore.drillToBedSpace(d), ...d }));
   if (allBed.length > 0) {
     const holeGeom = new THREE.CircleGeometry(0.4, 12);
-    const holeMat = new THREE.MeshBasicMaterial({ color: 0x0a0a0a });
+    const holeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
     const holes = new THREE.InstancedMesh(holeGeom, holeMat, allBed.length);
     const dummy = new THREE.Object3D();
     for (let i = 0; i < allBed.length; i++) {
@@ -372,7 +468,7 @@ function buildPCB() {
     pcbGroup.add(holes);
   }
 
-  // Solder point markers (copper rings)
+  // Solder point markers (copper/red rings matching 2D)
   const solderPts = drillStore.path
     .map(id => drillStore.drillData.find(d => d.id === id))
     .filter(d => d && d.solder)
@@ -380,7 +476,7 @@ function buildPCB() {
 
   if (solderPts.length > 0) {
     const ringGeom = new THREE.RingGeometry(0.35, 0.9, 16);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0xcc6633, side: THREE.DoubleSide });
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xdd3333, side: THREE.DoubleSide });
     const rings = new THREE.InstancedMesh(ringGeom, ringMat, solderPts.length);
     const dummy = new THREE.Object3D();
     for (let i = 0; i < solderPts.length; i++) {
@@ -406,12 +502,16 @@ function buildPCB() {
     scene.add(zone);
   }
 
-  // Reference grid below PCB (stays on scene)
-  const gridSize = Math.max(pw, ph) * 2;
-  const grid = new THREE.GridHelper(gridSize, Math.round(gridSize / 10), 0x333355, 0x222244);
-  grid.rotation.x = Math.PI / 2;
-  grid.position.set(b.minX + pw / 2, b.minY + ph / 2, -thick - 0.1);
-  scene.add(grid);
+  // Build plate with tiled brick texture (matching 2D grid pattern)
+  const bedW = drillStore.currentBedWidth || Math.max(pw, ph) * 2;
+  const bedH = drillStore.currentBedHeight || Math.max(pw, ph) * 2;
+  const plateGeom = new THREE.PlaneGeometry(bedW, bedH);
+  const plateTex = createBuildPlateTexture();
+  plateTex.repeat.set(bedW / 16, bedH / 16);
+  const plateMat = new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.9, metalness: 0.0 });
+  const plate = new THREE.Mesh(plateGeom, plateMat);
+  plate.position.set(bedW / 2, bedH / 2, -thick - 0.05);
+  scene.add(plate);
 }
 
 function buildPathLine() {
@@ -427,7 +527,7 @@ function buildPathLine() {
   if (pts.length < 2) return;
 
   const geom = new THREE.BufferGeometry().setFromPoints(pts);
-  const mat = new THREE.LineBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.35 });
+  const mat = new THREE.LineBasicMaterial({ color: 0x999999, transparent: true, opacity: 0.45 });
   scene.add(new THREE.Line(geom, mat));
 }
 
@@ -464,48 +564,130 @@ function buildIronTip() {
   scene.add(shadowDisc);
 }
 
-// ── GLB/GLTF Model Loading ───────────────────────────────────
+// ── 3D Model Loading (GLB/GLTF/STL/STEP/IGES) ─────────────
 
-function onModelFileSelected(event) {
+let occtModule = null;
+
+async function loadOcctModule() {
+  if (occtModule) return occtModule;
+  const occtimportjs = (await import('occt-import-js')).default;
+  occtModule = await occtimportjs({
+    locateFile: (name) => name.endsWith('.wasm') ? '/occt-import-js.wasm' : name,
+  });
+  return occtModule;
+}
+
+function occtResultToGroup(result) {
+  const group = new THREE.Group();
+  for (const meshData of result.meshes) {
+    const geom = new THREE.BufferGeometry();
+    const pos = meshData.attributes.position.array;
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(
+      pos instanceof Float32Array ? pos : new Float32Array(pos), 3));
+    if (meshData.attributes.normal) {
+      const nrm = meshData.attributes.normal.array;
+      geom.setAttribute('normal', new THREE.Float32BufferAttribute(
+        nrm instanceof Float32Array ? nrm : new Float32Array(nrm), 3));
+    }
+    const idx = meshData.index.array;
+    geom.setIndex(new THREE.BufferAttribute(
+      idx instanceof Uint32Array ? idx : new Uint32Array(idx), 1));
+    if (!meshData.attributes.normal) geom.computeVertexNormals();
+
+    const c = meshData.color ?? [0.6, 0.6, 0.6];
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(c[0], c[1], c[2]),
+      roughness: 0.5, metalness: 0.3,
+    });
+    group.add(new THREE.Mesh(geom, mat));
+  }
+  return group;
+}
+
+function mountLoadedModel(object3D) {
+  removePCBGroup();
+  removeLoadedModel();
+  loadedModelGroup = object3D;
+
+  // PCB models (KiCad GLB/STEP/STL) export with the component side facing up.
+  // Flip 180° around X so the solder side faces +Z for through-hole soldering.
+  loadedModelGroup.rotation.x = -Math.PI;
+  loadedModelGroup.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(loadedModelGroup);
+  const center = box.getCenter(new THREE.Vector3());
+
+  modelPivot = new THREE.Group();
+  modelPivot.position.copy(center);
+  modelBasePos = { x: center.x, y: center.y, z: center.z };
+
+  loadedModelGroup.position.x -= center.x;
+  loadedModelGroup.position.y -= center.y;
+  loadedModelGroup.position.z -= center.z;
+
+  modelPivot.add(loadedModelGroup);
+  scene.add(modelPivot);
+  modelLoaded.value = true;
+  statusMessage.value = '3D model loaded';
+}
+
+const STEP_EXTS = new Set(['step', 'stp']);
+const IGES_EXTS = new Set(['iges', 'igs']);
+
+async function onModelFileSelected(event) {
   const file = event.target.files?.[0];
   event.target.value = '';
   if (!file || !scene) return;
 
-  const reader = new FileReader();
-  reader.onload = () => {
-    const loader = new GLTFLoader();
-    loader.parse(reader.result, '', (gltf) => {
-      removePCBGroup();
-      removeLoadedModel();
+  const ext = file.name.split('.').pop().toLowerCase();
+  statusMessage.value = 'Loading model…';
 
-      loadedModelGroup = gltf.scene;
+  try {
+    const buffer = await file.arrayBuffer();
 
-      // GLTF is Y-up; our scene is Z-up — rotate -90° around X
-      loadedModelGroup.rotation.x = -Math.PI / 2;
-      loadedModelGroup.updateMatrixWorld(true);
-
-      // Compute bounding box to find the model's center for the pivot
-      const box = new THREE.Box3().setFromObject(loadedModelGroup);
-      const center = box.getCenter(new THREE.Vector3());
-
-      // Wrap in a pivot group at the model's center for user rotation/offset
-      modelPivot = new THREE.Group();
-      modelPivot.position.copy(center);
-      modelBasePos = { x: center.x, y: center.y, z: center.z };
-
-      // Offset model so its center sits at the pivot origin
-      loadedModelGroup.position.x -= center.x;
-      loadedModelGroup.position.y -= center.y;
-      loadedModelGroup.position.z -= center.z;
-
-      modelPivot.add(loadedModelGroup);
-      scene.add(modelPivot);
-      modelLoaded.value = true;
-    }, (err) => {
-      console.error('Failed to load GLTF model:', err);
-    });
-  };
-  reader.readAsArrayBuffer(file);
+    if (ext === 'stl') {
+      const loader = new STLLoader();
+      const geometry = loader.parse(buffer);
+      const mat = new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.5, metalness: 0.3 });
+      const mesh = new THREE.Mesh(geometry, mat);
+      const group = new THREE.Group();
+      group.add(mesh);
+      mountLoadedModel(group);
+    } else if (STEP_EXTS.has(ext) || IGES_EXTS.has(ext)) {
+      stepLoading.value = true;
+      stepLoadingPhase.value = 'Downloading CAD engine (~8 MB first time)…';
+      statusMessage.value = '';
+      try {
+        const occt = await loadOcctModule();
+        stepLoadingPhase.value = 'Parsing CAD file — this may take a while…';
+        await nextTick();
+        const fileData = new Uint8Array(buffer);
+        await new Promise(r => setTimeout(r, 50));
+        const result = STEP_EXTS.has(ext)
+          ? occt.ReadStepFile(fileData, null)
+          : occt.ReadIgesFile(fileData, null);
+        if (!result.success || result.meshes.length === 0) {
+          statusMessage.value = 'Failed to parse – file may be empty or unsupported';
+          return;
+        }
+        const group = occtResultToGroup(result);
+        mountLoadedModel(group);
+      } finally {
+        stepLoading.value = false;
+      }
+    } else {
+      const loader = new GLTFLoader();
+      loader.parse(buffer, '', (gltf) => {
+        mountLoadedModel(gltf.scene);
+      }, (err) => {
+        console.error('GLTF parse error:', err);
+        statusMessage.value = 'Failed to load model – try re-exporting as binary GLB';
+      });
+    }
+  } catch (err) {
+    console.error('Model load error:', err);
+    statusMessage.value = 'Failed to load model';
+  }
 }
 
 function removeModel() {
@@ -538,6 +720,24 @@ function resetModelAdjust() {
   if (!modelPivot || !modelBasePos) return;
   modelPivot.position.set(modelBasePos.x, modelBasePos.y, modelBasePos.z);
   modelPivot.rotation.set(0, 0, 0);
+}
+
+function prevSolderPoint() {
+  const pts = solderPointTimes.value;
+  const t = currentTime.value;
+  let prev = null;
+  for (const p of pts) {
+    if (p < t - 0.5) prev = p;
+    else break;
+  }
+  if (prev !== null) seekTo(prev);
+}
+
+function nextSolderPoint() {
+  const pts = solderPointTimes.value;
+  const t = currentTime.value;
+  const next = pts.find(p => p > t + 0.05);
+  if (next !== undefined) seekTo(next);
 }
 
 function getModelAdjustments() {
@@ -710,6 +910,7 @@ function cleanup() {
   modelPivot = null;
   modelBasePos = null;
   modelLoaded.value = false;
+  solderPointTimes.value = [];
   timeline = [];
 }
 
@@ -739,6 +940,36 @@ defineExpose({ show });
   width: 16px;
   height: 16px;
   margin-top: -5px;
+}
+
+.timeline-wrapper {
+  position: relative;
+}
+
+.timeline-markers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  pointer-events: none;
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 2px;
+  width: 2px;
+  height: 14px;
+  background: rgba(255, 160, 0, 0.65);
+  border-radius: 1px;
+  pointer-events: auto;
+  cursor: pointer;
+  transform: translateX(-1px);
+}
+.timeline-tick:hover {
+  background: rgba(255, 180, 0, 1);
+  width: 3px;
+  transform: translateX(-1.5px);
 }
 
 /* Model adjustment overlay */
@@ -852,5 +1083,63 @@ defineExpose({ show });
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+
+/* STEP/IGES loading overlay */
+.step-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 20, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+.step-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  background: rgba(30, 30, 50, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 28px 36px;
+  color: #eee;
+  max-width: 340px;
+  text-align: center;
+}
+
+.step-loading-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.step-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.step-progress-bar {
+  height: 100%;
+  width: 40%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #44bb66, #66dd88);
+  animation: step-progress-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes step-progress-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+.step-loading-hint {
+  font-size: 11px;
+  color: #999;
+  margin-top: 2px;
 }
 </style>

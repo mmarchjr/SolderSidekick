@@ -116,8 +116,9 @@ Click the **Simulate** button (next to "Save G-code") in the toolbar. A fullscre
 
 ### What you'll see
 
-- **PCB board** rendered at the correct thickness from your profile settings
-- **Drill holes** (dark circles) and **solder pads** (copper rings) at the exact positions from your drill file
+- **Build plate** with a tiled texture matching the interconnecting brick plate pattern from the 2D editor
+- **PCB board** rendered at the correct thickness from your profile settings, with colors matching the 2D view branding
+- **Drill holes** (dark circles) and **solder pads** (red rings) at the exact positions from your drill file
 - **No-go zones** shown as translucent red boxes
 - **Toolpath line** tracing the full G-code route
 - **Animated soldering iron** that moves through the G-code in real time — tilted 10° to match the physical iron angle, with a glowing tip effect when near the PCB surface
@@ -125,22 +126,24 @@ Click the **Simulate** button (next to "Save G-code") in the toolbar. A fullscre
 ### Playback controls
 
 - **Play / Pause** and **Restart** buttons
-- **Timeline scrubber** to jump to any point in the run
+- **Previous / Next solder point** skip buttons to jump between solder points
+- **Timeline scrubber** with orange markers showing each solder point's position — click any marker to jump there
+- **Point counter** showing which solder point you're at (e.g. "12/42")
 - **Speed selector** (1×, 2×, 5×, 10×, 25×, 50×)
 - **M117 status messages** from the G-code are displayed in the header
 
-### Loading a custom 3D model (GLB/GLTF)
+### Loading a custom 3D model (GLB/GLTF/STL/STEP/IGES)
 
 You can optionally replace the default green PCB with an actual 3D model of your board and components:
 
 1. Click **Load 3D Model** in the simulator header
-2. Select a `.glb` or `.gltf` file — KiCad 8+ can export GLB directly, or convert STEP files using FreeCAD or online tools. The model is loaded at its native scale (no auto-scaling), so it should match your drill data if exported from the same design.
+2. Select a `.glb`, `.gltf`, `.stl`, `.step`/`.stp`, or `.iges`/`.igs` file — KiCad 8+ can export GLB or STEP directly. STEP and IGES files are parsed natively in the browser using a WebAssembly engine (~8 MB one-time download on first use). Models are loaded at their native scale, so they should match your drill data if exported from the same design.
 3. Use the **Adjust Model** overlay panel (top-right of the viewport) to align the model:
    - **Rotate** the model in 90° steps around the X, Y, or Z axis
    - **Offset** the model along any axis with a selectable step size (0.1 / 0.5 / 1 / 5 mm)
    - **Reset** to snap back to the initial position
    - **Save** the adjustment settings to a `model-alignment.json` file so you can reuse them
-   - **Load** a previously saved settings file to instantly restore alignment — useful when you use the same GLB model and tooling across multiple sessions
+   - **Load** a previously saved settings file to instantly restore alignment — useful when you use the same model and tooling across multiple sessions
 4. Click **Remove Model** to revert to the default generated PCB
 
 ---
