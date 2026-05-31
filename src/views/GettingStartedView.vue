@@ -63,37 +63,6 @@
     </div>
   </template>
   
-  <script>
-  export default {
-    name: 'GettingStarted',
-    data() {
-      return {
-        faqs: [
-          {
-            question: 'What drill file format do I need?',
-            answer: 'Export your drill file as Excellon (.drl) from your PCB design software.<br><img src="/faq/drill-file-example.jpg" alt="Drill File Example">',
-            open: false,
-          },
-          {
-            question: 'Can I use this with any printer?',
-            answer: 'Solder Sidekick is designed for the Ender 3. Other printers may require custom mods.<br><a href="https://amzn.to/43fXs6A" target="_blank"><img src="/faq/ender3.jpg" alt="Ender 3 3D Printer"><br>Buy on Amazon</a>',
-            open: false,
-          },
-          {
-            question: 'What type of solder should I use?',
-            answer: 'We recommend using 0.6mm solder for best results.<br><a href="https://amzn.to/44WLI9R" target="_blank"><img src="/faq/solder-0.6mm.jpg" alt="0.6mm Solder"><br>Buy on Amazon</a>',
-            open: false,
-          },
-        ],
-      };
-    },
-    methods: {
-      toggleFaq(index) {
-        this.faqs[index].open = !this.faqs[index].open;
-      },
-    },
-  };
-  </script>
   
   <style scoped>
   .getting-started {

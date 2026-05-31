@@ -42,6 +42,10 @@
       <button class="btn" :class="isDrawingNoGoZone ? 'btn-danger' : 'btn-outline-danger'" @click="toggleNoGoZoneMode">
         <i class="fa-solid fa-ban"></i> No-Go Zone
       </button>
+      <select v-if="isDrawingNoGoZone" v-model="noGoZoneMode" class="form-select form-select-sm d-inline-block w-auto ms-1">
+        <option value="global">Global (Bed)</option>
+        <option value="perpcb">Per-PCB</option>
+      </select>
 
       <label class="form-label">Solder</label>
       <button class="btn btn-success" @click="setSelectedSolder(true)"><i class="fa-solid fa-check"></i></button>
@@ -91,6 +95,97 @@
       <ProfileManager />
     </div>
 
+    <!-- PCB Tray List -->
+    <div class="pcb-tray-section mb-3">
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <label class="form-label profile-label mb-0">PCB Tray</label>
+        <div>
+          <button class="btn btn-sm btn-outline-primary" @click="openFileDialog" title="Add PCB">
+            <i class="fa-solid fa-plus"></i> Add
+          </button>
+          <button class="btn btn-sm btn-outline-danger ms-1" @click="clearAllPcbs" title="Clear All PCBs" :disabled="drillStore.pcbs.length === 0">
+            <i class="fa-solid fa-trash"></i> Clear
+          </button>
+        </div>
+      </div>
+      <div class="pcb-list" v-if="drillStore.pcbs.length > 0">
+        <div
+          v-for="(pcb, idx) in drillStore.pcbs"
+          :key="pcb.id"
+          class="pcb-list-item d-flex align-items-center"
+          :class="{ active: pcb.id === drillStore.activePcbId }"
+          draggable="true"
+          @click="drillStore.setActivePcb(pcb.id); updateCanvas()"
+          @contextmenu.prevent="showPcbContextMenu($event, idx)"
+          @dragstart="onPcbDragStart(idx, $event)"
+          @dragover.prevent="onPcbDragOver(idx, $event)"
+          @drop="onPcbDrop(idx, $event)"
+          @dragend="onPcbDragEnd"
+        >
+          <i class="fa-solid fa-grip-vertical me-1 text-muted" style="cursor: grab;"></i>
+          <i class="fa-solid fa-file-lines me-2 text-muted"></i>
+          <span class="pcb-name text-truncate">{{ pcb.filename || 'Untitled' }}</span>
+          <span class="badge bg-secondary me-1">{{ pcb.drillData.length }}</span>
+          <button class="btn btn-sm btn-link p-0 text-decoration-none" @click.stop="drillStore.setActivePcb(pcb.id); toggleOriginCalculator()" title="Calculate PCB Offset">
+            <i class="fa-solid fa-crosshairs"></i>
+          </button>
+        </div>
+      </div>
+      <div v-else class="text-muted small fst-italic">No PCBs loaded</div>
+
+      <!-- Context Menu -->
+      <div v-if="pcbContextMenu.show" class="pcb-context-menu" :style="{ top: pcbContextMenu.y + 'px', left: pcbContextMenu.x + 'px' }">
+        <button class="dropdown-item" @click="duplicatePcbFromMenu"><i class="fa-solid fa-copy me-2"></i>Duplicate</button>
+        <button class="dropdown-item text-danger" @click="removePcbFromMenu"><i class="fa-solid fa-trash me-2"></i>Delete</button>
+      </div>
+    </div>
+
+    <!-- Per-PCB Properties Panel -->
+    <div v-if="drillStore.activePcb" class="pcb-properties-section mb-3">
+      <label class="form-label profile-label">PCB Properties</label>
+      <div class="small">
+        <div class="d-flex align-items-center mb-1">
+          <span class="text-muted me-2" style="min-width:70px;">File:</span>
+          <span class="text-truncate">{{ drillStore.activePcb.filename || 'Untitled' }}</span>
+        </div>
+        <div class="d-flex align-items-center mb-1">
+          <span class="text-muted me-2" style="min-width:70px;">Holes:</span>
+          <span>{{ drillStore.activePcb.drillData.length }}</span>
+        </div>
+        <div class="d-flex align-items-center mb-1">
+          <label class="text-muted me-2 mb-0" style="min-width:70px;">Offset X:</label>
+          <input type="number" class="form-control form-control-sm d-inline w-auto" v-model.number="drillStore.originOffsetX" step="0.5" @input="saveOffsetUndoState(); updateCanvas()">
+        </div>
+        <div class="d-flex align-items-center mb-1">
+          <label class="text-muted me-2 mb-0" style="min-width:70px;">Offset Y:</label>
+          <input type="number" class="form-control form-control-sm d-inline w-auto" v-model.number="drillStore.originOffsetY" step="0.5" @input="saveOffsetUndoState(); updateCanvas()">
+        </div>
+        <div class="d-flex align-items-center mb-1">
+          <label class="text-muted me-2 mb-0" style="min-width:70px;">Offset Z:</label>
+          <input type="number" class="form-control form-control-sm d-inline w-auto" v-model.number="drillStore.originOffsetZ" step="0.5">
+          <span class="ms-1">mm</span>
+        </div>
+        <div class="d-flex align-items-center mb-1">
+          <label class="text-muted me-2 mb-0" style="min-width:70px;">Rotation:</label>
+          <input type="number" class="form-control form-control-sm d-inline w-auto" v-model.number="drillStore.rotation" step="90" @change="updateCanvas()">
+          <span class="ms-1">°</span>
+        </div>
+        <div class="d-flex align-items-center mb-1">
+          <label class="text-muted me-2 mb-0" style="min-width:70px;">Thickness:</label>
+          <input type="number" class="form-control form-control-sm d-inline w-auto" v-model.number="pcbThickness" step="0.1">
+          <span class="ms-1">mm</span>
+        </div>
+        <div class="d-flex align-items-center mb-1">
+          <label class="text-muted me-2 mb-0" style="min-width:70px;">Via Filter:</label>
+          <input type="number" class="form-control form-control-sm d-inline w-auto" v-model.number="drillStore.viaFilterDiameter" step="0.1" min="0" @input="updateCanvas()">
+          <span class="ms-1">mm</span>
+        </div>
+        <div v-if="drillStore.activePcb.noGoZones.length > 0" class="mt-1">
+          <span class="text-muted">No-Go Zones: {{ drillStore.activePcb.noGoZones.length }}</span>
+        </div>
+      </div>
+    </div>
+
      <div class="my-2">
       <label class="form-label">PCB Thickness (mm) <i class="fas fa-layer-group"></i></label>
       <input
@@ -103,18 +198,6 @@
 
     
 
-    <div class="d-flex align-items-center sidebar-home-origin my-2">
-      <label class="form-label profile-label">Origin X</label>
-      <input type="number" class="form-control d-inline w-auto ms-2" v-model="zeroX" step="0.01"/>
-      <label class="form-label profile-label mw-1">Y</label>
-      <input type="number" class="form-control d-inline w-auto ms-1" v-model="zeroY" step="0.01"/>
-      <label class="form-label profile-label mw-1">Z</label>
-      <input type="number" class="form-control d-inline w-auto ms-1" v-model="zeroZ" step="0.01"/>
-    </div>
-
-    <button class="btn btn-outline-dark my-1" @click="toggleOriginCalculator"><i class="fa-solid fa-location-crosshairs"></i> Measure Origin From PCB</button>
-
-
     <div v-if="zeroX === null || zeroY === null || zeroZ === null" class="measure-note my-1">
       <p class="text-muted">Measure/enter the origin offset for your machine</p>
     </div>
@@ -124,9 +207,9 @@
     <div class="origin-calculator" v-if="showOriginCalculator">
     <button class="btn btn-outline-dark close-calculator" @click="closeCalculator"><i class="fa-solid fa-xmark"></i></button>
     <h3>Select a Point</h3>
-    <p>Move 3D printer to selected point, and enter XYZ position</p>
+    <p>Move 3D printer to selected point, enter machine X, Y, Z position</p>
     <div class="d-flex align-items-center sidebar-home-origin my-2">
-      <label class="form-label profile-label">Point X</label>
+      <label class="form-label profile-label">Machine X</label>
       <input type="number" class="form-control d-inline w-auto ms-2" v-model="pointX" step="0.01"/>
       <label class="form-label profile-label mw-1">Y</label>
       <input type="number" class="form-control d-inline w-auto ms-1" v-model="pointY" step="0.01"/>
@@ -134,7 +217,7 @@
       <input type="number" class="form-control d-inline w-auto ms-1" v-model="pointZ" step="0.01"/>
     </div>
     
-    <button class="btn btn-outline-dark my-1" @click="calculateOrigin"><i class="fa-solid fa-calculator"></i> Calculate Origin</button>
+    <button class="btn btn-outline-dark my-1" @click="calculateOrigin"><i class="fa-solid fa-calculator"></i> Calculate PCB Offset</button>
     </div>
 
 
@@ -154,9 +237,7 @@
               <th title="X position in mm">X</th>
               <th title="Y position in mm">Y</th>
               <th title="Hole diameter (mm)"><i class="fas fa-circle"></i></th>
-              <th title="Seconds spent preheating the pad and the part">Soak</th>
-              <th title="Amount of solder to extrude (mm)">Feed</th>
-              <th title="Seconds spent holding the soldering iron after applying solder">Dwell</th>
+              <th title="Pad area (mm²) — used for spline graph lookup">Area</th>
               <th title="X offset (mm) from drill point"><i class="fas fa-arrows-alt-h"></i> X</th>
               <th title="Y offset (mm) from drill point"><i class="fas fa-arrows-alt-v"></i> Y</th>
               <th title="Z offset (mm) from top of PCB surface"><i class="fa-solid fa-layer-group"></i> Z</th>
@@ -178,44 +259,7 @@
               <td>{{ hole.x.toFixed(1) }}</td>
               <td>{{ hole.y.toFixed(1) }}</td>
               <td>{{ getDiameter(hole.size) }}</td>
-              
-              
-              <td>
-                <input
-                  type="number"
-                  class="form-control form-control-sm"
-                  :value="hole.soak"
-                  min="0"
-                  step="0.1"
-                  style="max-width: 70px;"
-                  @click.stop
-                  @change="updateField(hole, 'soak', $event.target.valueAsNumber)"
-                />
-              </td>
-              <td>
-                <input
-                  type="number"
-                  class="form-control form-control-sm"
-                  :value="hole.feed"
-                  min="0"
-                  step="0.1"
-                  style="max-width: 70px;"
-                  @click.stop
-                  @change="updateField(hole, 'feed', $event.target.valueAsNumber)"
-                />
-              </td>
-              <td>
-                <input
-                  type="number"
-                  class="form-control form-control-sm"
-                  :value="hole.dwell"
-                  min="0"
-                  step="0.1"
-                  style="max-width: 70px;"
-                  @click.stop
-                  @change="updateField(hole, 'dwell', $event.target.valueAsNumber)"
-                />
-              </td>
+              <td>{{ getPadArea(hole.size).toFixed(1) }}</td>
               <td>
                 <input
                   type="number"
@@ -282,14 +326,14 @@
 </div>
     </div>
 
-<GettingStarted ref="introModal" />
 <GcodeSimulator ref="simulatorRef" />
+<ImportWizard ref="importWizardRef" />
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick  } from "vue";
-import GettingStarted from "@/components/GettingStarted.vue";
 import GcodeSimulator from "@/components/GcodeSimulator.vue";
+import ImportWizard from "@/components/ImportWizard.vue";
 import ProfileManager from '@/components/ProfileManager.vue';
 import { useDrillStore } from "@/stores/store";
 import { useFileHandlers } from "@/composables/useFileHandlers";
@@ -301,6 +345,7 @@ const { generateGcode, saveGcodeFile } = useGcodeGenerator();
 const drillStore = useDrillStore();
 const canvas = ref(null);
 const simulatorRef = ref(null);
+const importWizardRef = ref(null);
 
 // Profile selection
 const selectedProfile = computed({
@@ -308,19 +353,6 @@ const selectedProfile = computed({
   set: (val) => drillStore.setCurrentProfile(val)
 });
 
-// Origin inputs
-const zeroX = computed({
-  get: () => drillStore.profiles[drillStore.currentProfile].zeroX,
-  set: (val) => drillStore.updateCurrentProfileSettings({ zeroX: val })
-});
-const zeroY = computed({
-  get: () => drillStore.profiles[drillStore.currentProfile].zeroY,
-  set: (val) => drillStore.updateCurrentProfileSettings({ zeroY: val })
-});
-const zeroZ = computed({
-  get: () => drillStore.profiles[drillStore.currentProfile].zeroZ,
-  set: (val) => drillStore.updateCurrentProfileSettings({ zeroZ: val })
-});
 
 // Homing inputs
 const homeX = computed({
@@ -369,6 +401,7 @@ let isDraggingOrigin = false;
 let dragOriginStart = null;
 
 const isDrawingNoGoZone = ref(false);
+const noGoZoneMode = ref("global"); // "global" or "perpcb"
 let isDrawingNoGoRect = false;
 let noGoZoneStart = null;
 let noGoZoneEnd = null;
@@ -394,20 +427,12 @@ const pcbThickness = computed({
 
 const saveGcode = () => {
   try {
-    // Check if origin XYZ values are set
-    const profile = drillStore.profiles[drillStore.currentProfile];
-    if (profile.zeroX === null || profile.zeroY === null || profile.zeroZ === null) {
-      alert("Please measure the origin of your 3D printer and fill in the correct Origin X, Y, and Z values for your machine before saving G-code.");
-      return;
-    }
-    
     const solderPoints = drillStore.drillData.filter(d => d.solder && drillStore.path.includes(d.id));
     
     if (solderPoints.length === 0) {
       alert("No solder points selected! Please select points to solder.");
       return;
     }
-    
     const gcode = generateGcode();
     saveGcodeFile(gcode);
     console.log("G-code saved successfully!");
@@ -419,11 +444,6 @@ const saveGcode = () => {
 
 const openSimulator = () => {
   try {
-    const profile = drillStore.profiles[drillStore.currentProfile];
-    if (profile.zeroX === null || profile.zeroY === null || profile.zeroZ === null) {
-      alert("Please set the Origin X, Y, and Z values before simulating.");
-      return;
-    }
     const solderPoints = drillStore.drillData.filter(d => d.solder && drillStore.path.includes(d.id));
     if (solderPoints.length === 0) {
       alert("No solder points selected! Please select points to solder.");
@@ -440,13 +460,17 @@ const openSimulator = () => {
 const openFileDialog = () => {
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = ".drl,.txt,.json";
+  input.accept = ".drl,.txt,.json,.zip";
   input.onchange = (event) => {
     const file = event.target.files[0];
     if (!file) return;
     const ext = file.name.split('.').pop().toLowerCase();
     if (ext === "json") {
       parseProjectFile(file);
+    } else if (ext === "zip") {
+      if (importWizardRef.value) {
+        importWizardRef.value.openZipFile(file);
+      }
     } else {
       parseDrillFile(file);
     }
@@ -515,19 +539,24 @@ watch(
 onBeforeUnmount(() => {
   window.removeEventListener("resize", resizeCanvas);
   window.removeEventListener("keydown", handleKeyDown);
-  window.removeEventListener("mousedown", handleMouseDown);
-  window.removeEventListener("mouseup", handleMouseUp);
+  window.removeEventListener("mousedown", handleWindowMouseDown);
+  window.removeEventListener("mouseup", handleWindowMouseUp);
+  window.removeEventListener("mousemove", handleWindowMouseMove);
+  document.removeEventListener("click", hidePcbContextMenu);
 });
 
 
 onMounted(async () => {
+  console.log('[canvas] MOUNTED canvas=', !!canvas.value);
   const canvasEl = canvas.value;
+  if (!canvasEl) return;
   ctx = canvasEl.getContext("2d");
+  console.log('[canvas] CTX SET', !!ctx);
 
-  const s = drillStore.profiles[selectedProfile.value];
-  zeroX.value = s.zeroX;
-  zeroY.value = s.zeroY;
-  zeroZ.value = s.zeroZ;
+  if (!drillStore.profiles[selectedProfile.value]) {
+    drillStore.initProfiles();
+  }
+  const s = drillStore.profiles[selectedProfile.value] || {};
 
   resizeCanvas();          // sets canvas size and devicePixelRatio
   fitCanvasToBuildPlate(); // zooms and centers based on build plate
@@ -567,17 +596,31 @@ onMounted(async () => {
 
   window.addEventListener("keydown", handleKeyDown);
 
-  const handleMouseDown = (e) => {
+  const handleWindowMouseDown = (e) => {
     if (e.shiftKey) {
       document.body.classList.add("prevent-select");
     }
   };
-  const handleMouseUp = () => {
+  const handleWindowMouseUp = () => {
+    if (isPanning) console.log('[canvas] PAN END');
     document.body.classList.remove("prevent-select");
+    isPanning = false;
   };
-  window.addEventListener("mousedown", handleMouseDown);
-  window.addEventListener("mouseup", handleMouseUp);
-  
+  const handleWindowMouseMove = (e) => {
+    if (isPanning) {
+      console.log('[canvas] PAN MOVE dx=', e.clientX - startX, 'dy=', e.clientY - startY);
+      offsetX += e.clientX - startX;
+      offsetY += e.clientY - startY;
+      startX = e.clientX;
+      startY = e.clientY;
+      updateCanvas();
+    }
+  };
+  window.addEventListener("mousedown", handleWindowMouseDown);
+  window.addEventListener("mouseup", handleWindowMouseUp);
+  window.addEventListener("mousemove", handleWindowMouseMove);
+
+  document.addEventListener("click", hidePcbContextMenu);
 
   setInterval(() => {
     currentLabelIndex.value = (currentLabelIndex.value + 1) % editorLabels.value.length;
@@ -587,15 +630,11 @@ onMounted(async () => {
 
 
 const updateField = (hole, field, value) => {
-  drillStore.undoStack.push({
-    drillData: drillStore.drillData.map(d => ({ ...d }))
-  });
+  drillStore.addUndoSnapshot(drillStore._takeSnapshot());
   drillStore.redoStack = [];
 
-  // First, update the specific hole that was changed
   hole[field] = value;
 
-  // Then, if there are other selected rows, update them too
   drillStore.drillData.forEach(d => {
     if (d.selected && d.id !== hole.id) {
       d[field] = value;
@@ -613,13 +652,7 @@ const rotateAndSave = (angleDelta) => {
 };
 
 const saveOffsetUndoState = () => {
-  drillStore.undoStack.push({
-    transform: {
-      originOffsetX: drillStore.originOffsetX,
-      originOffsetY: drillStore.originOffsetY,
-      rotation: drillStore.rotation
-    }
-  });
+  drillStore.addUndoSnapshot(drillStore._takeSnapshot());
   drillStore.redoStack = [];
 };
 
@@ -644,29 +677,35 @@ const closeCalculator = () => {
 
 const calculateOrigin = () => {
   if (!selectedOriginPoint.value || pointX.value === null || pointY.value === null || pointZ.value === null) {
-    alert("Please select a point on the PCB and enter the Point X, Y, Z values");
+    alert("Please select a point on the PCB and enter the machine X, Y, Z coordinates");
     return;
   }
 
-  const selectedDrill = drillStore.drillData.find(d => d.id === selectedOriginPoint.value);
+  const pcb = drillStore.activePcb;
+  if (!pcb) return;
+  const selectedDrill = pcb.drillData.find(d => d.id === selectedOriginPoint.value);
   if (!selectedDrill) return;
 
-  // Get the transformed coordinates with PCB offset/rotation/flip factored in
-  const transformed = getTransformedCoordinates(selectedDrill);
-  
-  // Calculate new origin by subtracting Point XY from selected point's XY
-  const newOriginX = (transformed.x - pointX.value) * -1.0;
-  const newOriginY = (transformed.y - pointY.value) * -1.0;
-  
-  // Calculate new origin Z by subtracting PCB thickness from Point Z
-  const newOriginZ = pointZ.value - pcbThickness.value;
+  // Rotate the drill point (no offset yet — we're solving for it)
+  const rad = -(pcb.rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const rotatedX = selectedDrill.x * cos - selectedDrill.y * sin;
+  const rotatedY = selectedDrill.x * sin + selectedDrill.y * cos;
 
-  // Update the origin values - round to nearest 0.01
-  zeroX.value = Math.round(newOriginX * 100) / 100;
-  zeroY.value = Math.round(newOriginY * 100) / 100;
-  zeroZ.value = Math.round(newOriginZ * 100) / 100;
+  // machine coords = rotated + offset → offset = machine - rotated
+  const newOffsetX = pointX.value - rotatedX;
+  const newOffsetY = pointY.value - rotatedY;
 
-  // Close the calculator
+  // originOffsetZ = machine Z position
+  const newOriginZoffset = pointZ.value;
+
+  drillStore.saveTransformUndoState();
+  pcb.originOffsetX = newOffsetX;
+  pcb.originOffsetY = newOffsetY;
+  pcb.originOffsetZ = newOriginZoffset;
+
+  updateCanvas();
   closeCalculator();
 };
 
@@ -691,12 +730,6 @@ const getTransformedCoordinates = (drill) => {
 
 
 const onSolderToggle = (hole) => {
-  drillStore.undoStack.push({
-    path: [...drillStore.path],
-    solderStates: drillStore.drillData.map(d => ({ id: d.id, solder: d.solder }))
-  });
-  drillStore.redoStack = [];
-
   if (!hole.solder) {
     drillStore.removeFromPath(hole.id);
   } else {
@@ -707,10 +740,7 @@ const onSolderToggle = (hole) => {
 
 
 const setSelectedSolder = (state) => {
-  drillStore.undoStack.push({
-    path: [...drillStore.path],
-    solderStates: drillStore.drillData.map(d => ({ id: d.id, solder: d.solder }))
-  });
+  drillStore.addUndoSnapshot(drillStore._takeSnapshot());
   drillStore.redoStack = [];
 
   drillStore.drillData.forEach(d => {
@@ -823,57 +853,64 @@ const drawClippedGrid = (ctx, width, height, spacing = 16, color = "#aaaaaa") =>
 
 
 const updateCanvas = () => {
-  if (!ctx) return;
-  if (pendingRenderFrame) return; // Skip if already scheduled
-
+  if (!ctx) { console.log('[canvas] UPDATE BLOCKED - no ctx'); return; }
+  if (pendingRenderFrame) { console.log('[canvas] UPDATE SKIPPED - pending frame'); return; }
+  console.log('[canvas] UPDATE pcbs=', drillStore.pcbs.length, 'active=', drillStore.activePcbId);
 
   pendingRenderFrame = requestAnimationFrame(() => {
     pendingRenderFrame = null;
-
-  ctx.clearRect(0, 0, canvas.value.width, canvas.value.height);
+    const dpr = window.devicePixelRatio || 1;
+    console.log('[canvas] RAF DRAW offsetX=', offsetX.toFixed(1), 'offsetY=', offsetY.toFixed(1), 'scale=', scale.toFixed(2), 'dpr=', dpr, 'cw=', canvas.value?.width, 'ch=', canvas.value?.height);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.value.width, canvas.value.height);
+    ctx.scale(dpr, dpr);
   ctx.save();
   ctx.translate(offsetX, offsetY);
   ctx.scale(scale, scale);
 
-  // Draw build plate
   const bedWidth = drillStore.currentBedWidth;
   const bedHeight = drillStore.currentBedHeight;
   ctx.fillStyle = "#c9c9c9";
   ctx.fillRect(0, -bedHeight, bedWidth, bedHeight);
 
-  // Draw 16mm grid lines clipped to print bed
   drawClippedGrid(ctx, bedWidth, bedHeight, 16);
 
-  // Draw no-go zones (bed coordinate space, Y flipped for canvas)
   drawNoGoZones(ctx);
 
-  // 💡 Apply offset only to drill data
-  ctx.translate(drillStore.originOffsetX, -drillStore.originOffsetY);
-  ctx.rotate((drillStore.rotation * Math.PI) / 180);
+  for (let pcbIdx = 0; pcbIdx < drillStore.pcbs.length; pcbIdx++) {
+    const pcb = drillStore.pcbs[pcbIdx];
+    const isActive = pcb.id === drillStore.activePcbId;
+    const alpha = isActive ? 1.0 : 0.35;
 
-  // Draw + at drill file origin (0,0) after offset and rotation
-  ctx.strokeStyle = "magenta";
-  ctx.lineWidth = 2 / scale;
-  const originLength = 8;
-  ctx.beginPath();
-  ctx.moveTo(-originLength / scale, 0);
-  ctx.lineTo(originLength / scale, 0);
-  ctx.moveTo(0, -originLength / scale);
-  ctx.lineTo(0, originLength / scale);
-  ctx.stroke();
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(pcb.originOffsetX, -pcb.originOffsetY);
+    ctx.rotate((pcb.rotation * Math.PI) / 180);
 
-  drawPathLines();
-  drawDrillHoles();
-  ctx.restore();
+    ctx.strokeStyle = "magenta";
+    ctx.lineWidth = 2 / scale;
+    const originLength = 8;
+    ctx.beginPath();
+    ctx.moveTo(-originLength / scale, 0);
+    ctx.lineTo(originLength / scale, 0);
+    ctx.moveTo(0, -originLength / scale);
+    ctx.lineTo(0, originLength / scale);
+    ctx.stroke();
+
+    drawPathLines(pcb);
+    drawPcbOutline(pcb);
+    drawDrillHoles(pcb);
+    ctx.restore();
+  }
+
   drawPathLabels();
 
-  // === Draw fixed-size origin arrows and cross in screen space ===
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
   ctx.save();
-
   const originX = offsetX;
   const originY = offsetY;
 
-  // Draw blue origin cross
   ctx.strokeStyle = "blue";
   ctx.lineWidth = 6;
   ctx.beginPath();
@@ -883,9 +920,8 @@ const updateCanvas = () => {
   ctx.lineTo(originX, originY + 16);
   ctx.stroke();
 
-  // Draw fixed-size arrows (e.g., 40px length)
-  drawFixedArrow(ctx, originX, originY, 60, 0, "red");    // X-axis
-  drawFixedArrow(ctx, originX, originY, 0, -60, "green"); // Y-axis
+  drawFixedArrow(ctx, originX, originY, 60, 0, "red");
+  drawFixedArrow(ctx, originX, originY, 0, -60, "green");
 
   ctx.restore();
 
@@ -896,7 +932,14 @@ const updateCanvas = () => {
 
 
 const drawNoGoZones = (ctx) => {
-  const zones = [...drillStore.noGoZones];
+  const zones = [...drillStore.globalNoGoZones];
+
+  const activePcb = drillStore.activePcb;
+  if (activePcb) {
+    for (const z of activePcb.noGoZones) {
+      zones.push(z);
+    }
+  }
 
   if (isDrawingNoGoRect && noGoZoneStart && noGoZoneEnd) {
     zones.push({
@@ -1008,11 +1051,12 @@ const bedToDrillCanvas = (wp) => {
 };
 
 // Draw all path lines (after transform applied), routing around no-go zones
-const drawPathLines = () => {
-  const path = drillStore.path;
+const drawPathLines = (pcb) => {
+  const path = pcb.path;
   if (!Array.isArray(path) || path.length < 2) return;
 
-  const hasZones = drillStore.noGoZones.length > 0;
+  const zones = drillStore._getAllNoGoZones(pcb);
+  const hasZones = zones.length > 0;
 
   ctx.strokeStyle = "#999";
   ctx.lineWidth = 8 / scale;
@@ -1022,20 +1066,20 @@ const drawPathLines = () => {
   let prevBed = null;
 
   for (let i = 0; i < path.length; i++) {
-    const pt = drillStore.drillData.find(d => d.id === path[i]);
+    const pt = pcb.drillData.find(d => d.id === path[i]);
     if (!pt) continue;
 
     if (!prevPt) {
       ctx.moveTo(pt.x, -pt.y);
       prevPt = pt;
-      if (hasZones) prevBed = drillStore.drillToBedSpace(pt);
+      if (hasZones) prevBed = drillStore.drillToBedSpace(pt, pcb);
       continue;
     }
 
     if (hasZones) {
-      const curBed = drillStore.drillToBedSpace(pt);
+      const curBed = drillStore.drillToBedSpace(pt, pcb);
       const waypoints = drillStore.computeRouteAroundZones(
-        prevBed.x, prevBed.y, curBed.x, curBed.y
+        prevBed.x, prevBed.y, curBed.x, curBed.y, zones
       );
       for (const wp of waypoints) {
         const dc = bedToDrillCanvas(wp);
@@ -1049,22 +1093,21 @@ const drawPathLines = () => {
   }
   ctx.stroke();
 
-  // Draw waypoint markers as small diamonds so the detour is visible
   if (hasZones) {
     ctx.fillStyle = "rgba(255, 140, 0, 0.7)";
     prevPt = null;
     prevBed = null;
     for (let i = 0; i < path.length; i++) {
-      const pt = drillStore.drillData.find(d => d.id === path[i]);
+      const pt = pcb.drillData.find(d => d.id === path[i]);
       if (!pt) continue;
       if (!prevPt) {
         prevPt = pt;
-        prevBed = drillStore.drillToBedSpace(pt);
+        prevBed = drillStore.drillToBedSpace(pt, pcb);
         continue;
       }
-      const curBed = drillStore.drillToBedSpace(pt);
+      const curBed = drillStore.drillToBedSpace(pt, pcb);
       const waypoints = drillStore.computeRouteAroundZones(
-        prevBed.x, prevBed.y, curBed.x, curBed.y
+        prevBed.x, prevBed.y, curBed.x, curBed.y, zones
       );
       const markerSize = 3 / scale;
       for (const wp of waypoints) {
@@ -1083,18 +1126,51 @@ const drawPathLines = () => {
   }
 };
 
-// Draw all holes (after transform applied)
-const drawDrillHoles = () => {
-  for (const d of filteredDrillData.value) {
-    const x = d.x, y = -d.y;
-    // Use actual hole diameter for circle radius (diameter / 2)
+// Draw PCB board outline (after transform applied, same space as drill points)
+const drawPcbOutline = (pcb) => {
+  const outline = pcb.outline;
+  if (!outline || outline.length < 2) return;
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(0, 120, 200, 0.7)";
+  ctx.lineWidth = 2 / scale;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+
+  let started = false;
+  for (let i = 0; i < outline.length; i++) {
+    const pt = outline[i];
+    if (pt === null) {
+      if (started) ctx.stroke();
+      ctx.beginPath();
+      started = false;
+      continue;
+    }
+    if (!started) {
+      ctx.moveTo(pt.x, -pt.y);
+      started = true;
+    } else {
+      ctx.lineTo(pt.x, -pt.y);
+    }
+  }
+  if (started) ctx.stroke();
+
+  ctx.fillStyle = "rgba(0, 120, 200, 0.04)";
+  ctx.fill();
+  ctx.restore();
+};
+
+const drawDrillHoles = (pcb) => {
+  const viaFilter = pcb.viaFilterDiameter ?? 0.4;
+  for (const d of pcb.drillData) {
     const holeDiameter = getDiameter(d.size);
-    const r = (holeDiameter / 2) || (radius / scale); // Fallback to default if no diameter
+    if (holeDiameter < viaFilter) continue;
+    const x = d.x, y = -d.y;
+    const r = (holeDiameter / 2) || (radius / scale);
     ctx.beginPath();
     ctx.arc(x, y, r, 0, 2 * Math.PI);
     
-    // Highlight the selected origin point in yellow
-    if (isSelectingOriginPoint.value && d.id === selectedOriginPoint.value) {
+    if (isSelectingOriginPoint.value && pcb.id === drillStore.activePcbId && d.id === selectedOriginPoint.value) {
       ctx.fillStyle = "yellow";
       ctx.strokeStyle = "orange";
       ctx.lineWidth = 3 / scale;
@@ -1111,10 +1187,10 @@ const drawDrillHoles = () => {
 
 // Draw drill path labels in screen space (if zoomed in)
 const drawPathLabels = () => {
-  if (scale < 3) return; // ⛔ Hide labels when zoomed out
-
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.save();
-  ctx.font = `${12}px sans-serif`;
+  ctx.font = `bold ${12}px sans-serif`;
   ctx.fillStyle = "black";
   ctx.textAlign = "left";
   ctx.textBaseline = "bottom";
@@ -1203,6 +1279,11 @@ const getDiameter = (sizeString) => {
   return match ? parseFloat(match[0]) : 0;
 };
 
+const getPadArea = (sizeString) => {
+  const d = getDiameter(sizeString);
+  return Math.PI * Math.pow(d / 2, 2);
+};
+
 // Computed property that filters drill points by diameter
 // Always shows points that are marked for soldering or are in the toolpath
 const filteredDrillData = computed(() => {
@@ -1225,14 +1306,28 @@ const sortedDrillData = computed(() => {
 });
 
 const handleMouseDown = (e) => {
+  console.log('[canvas] mousedown button=', e.button, 'ctx=', !!ctx, 'canvas=', !!canvas.value);
+  // Right-click pan must be checked FIRST — before getMousePosition which may throw
+  if (e.button === 2) {
+    isPanning = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    console.log('[canvas] PAN START');
+    return;
+  }
 
+  if (!canvas.value) return;
   const mouse = getMousePosition(e, false); // don't apply offset
 
   // No-go zone edit mode (left-click only, allow right-click panning)
   if (isDrawingNoGoZone.value && e.button === 0) {
     const delId = findNoGoDeleteBtn(mouse);
     if (delId) {
-      drillStore.removeNoGoZone(delId);
+      if (drillStore.globalNoGoZones.some(z => z.id === delId)) {
+        drillStore.removeGlobalNoGoZone(delId);
+      } else {
+        drillStore.removeNoGoZone(delId);
+      }
       updateCanvas();
       return;
     }
@@ -1256,13 +1351,6 @@ const handleMouseDown = (e) => {
     drillStore.saveTransformUndoState();
     isDraggingOrigin = true;
     dragOriginStart = { x: e.clientX, y: e.clientY, offsetX: drillStore.originOffsetX, offsetY: drillStore.originOffsetY };
-    return;
-  }
-
-  if (e.button === 2) { // Right-click
-    isPanning = true;
-    startX = e.clientX;
-    startY = e.clientY;
     return;
   }
 
@@ -1321,9 +1409,10 @@ updateCanvas();
 };
 
 const handleMouseMove = (e) => {
+  if (!canvas.value) return;
   if (resizingZone) {
     const mouse = getMousePosition(e, false);
-    const z = drillStore.noGoZones.find(zn => zn.id === resizingZone.zoneId);
+    const z = drillStore._getAllNoGoZones().find(zn => zn.id === resizingZone.zoneId);
     if (z) {
       const nb = { ...resizingZone.orig };
       for (const p of resizingZone.dragProps) {
@@ -1348,21 +1437,15 @@ const handleMouseMove = (e) => {
     const dy = (e.clientY - dragOriginStart.y) / scale;
 
     // Snap to nearest 8mm
-    const newOffsetX = Math.round((dragOriginStart.offsetX + dx) / 8) * 8;
-    const newOffsetY = Math.round((dragOriginStart.offsetY - dy) / 8) * 8;
+    const newOffsetX = dragOriginStart.offsetX + dx;
+    const newOffsetY = dragOriginStart.offsetY - dy;
 
     drillStore.originOffsetX = newOffsetX;
     drillStore.originOffsetY = newOffsetY;
     updateCanvas();
     return;
   }
-  if (isPanning) {
-    offsetX += e.clientX - startX;
-    offsetY += e.clientY - startY;
-    startX = e.clientX;
-    startY = e.clientY;
-    updateCanvas();
-  }
+  if (isPanning) return;
   if (isSelecting) {
     selectionEnd = getMousePosition(e, false); // ⬅️ match startInteraction logic
     updateCanvas();
@@ -1383,12 +1466,17 @@ const handleMouseUp = () => {
     const w = Math.abs(noGoZoneEnd.x - noGoZoneStart.x);
     const h = Math.abs(noGoZoneEnd.y - noGoZoneStart.y);
     if (w > 0.5 && h > 0.5) {
-      drillStore.addNoGoZone({
+      const zone = {
         x1: noGoZoneStart.x,
         y1: noGoZoneStart.y,
         x2: noGoZoneEnd.x,
         y2: noGoZoneEnd.y,
-      });
+      };
+      if (noGoZoneMode.value === "global") {
+        drillStore.addGlobalNoGoZone(zone);
+      } else {
+        drillStore.addNoGoZone(zone);
+      }
     }
     isDrawingNoGoRect = false;
     noGoZoneStart = null;
@@ -1430,8 +1518,15 @@ updateCanvas();
 };
 
 const handleZoom = (e) => {
+  if (!canvas.value) return;
+  const rect = canvas.value.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const oldScale = scale;
   const delta = e.deltaY * -0.005;
-  scale = Math.max(0.5, Math.min(30, scale + delta));
+  scale = Math.max(0.1, Math.min(30, scale + delta));
+  offsetX = mx - (mx - offsetX) * (scale / oldScale);
+  offsetY = my - (my - offsetY) * (scale / oldScale);
   updateCanvas();
 };
 
@@ -1528,8 +1623,9 @@ const toggleNoGoZoneMode = () => {
 
 const findNoGoDeleteBtn = (pt) => {
   const btnR = 7 / scale;
-  for (let i = drillStore.noGoZones.length - 1; i >= 0; i--) {
-    const z = drillStore.noGoZones[i];
+  const allZones = drillStore._getAllNoGoZones();
+  for (let i = allZones.length - 1; i >= 0; i--) {
+    const z = allZones[i];
     const btnX = z.x2 + btnR * 0.3;
     const btnY = z.y2 + btnR * 0.3;
     if (Math.hypot(pt.x - btnX, pt.y - btnY) < btnR * 1.5) {
@@ -1541,8 +1637,9 @@ const findNoGoDeleteBtn = (pt) => {
 
 const findResizeHandle = (pt) => {
   const hitR = 5 / scale;
-  for (let i = drillStore.noGoZones.length - 1; i >= 0; i--) {
-    const z = drillStore.noGoZones[i];
+  const allZones = drillStore._getAllNoGoZones();
+  for (let i = allZones.length - 1; i >= 0; i--) {
+    const z = allZones[i];
     const cx = (z.x1 + z.x2) / 2;
     const cy = (z.y1 + z.y2) / 2;
     const handles = [
@@ -1568,6 +1665,65 @@ const findResizeHandle = (pt) => {
   return null;
 };
 
+const removePcb = (pcbId) => {
+  drillStore.removePcb(pcbId);
+  drillStore.triggerCanvasUpdate();
+};
+
+const clearAllPcbs = () => {
+  if (drillStore.pcbs.length === 0) return;
+  if (confirm("Remove all PCBs from the tray?")) {
+    drillStore.clearAllPcbs();
+    drillStore.triggerCanvasUpdate();
+  }
+};
+
+const duplicatePcb = (pcbId) => {
+  drillStore.duplicatePcb(pcbId);
+  drillStore.triggerCanvasUpdate();
+};
+
+// PCB drag-and-drop reorder
+let dragPcbIndex = -1;
+const onPcbDragStart = (idx, event) => {
+  dragPcbIndex = idx;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", idx);
+};
+const onPcbDragOver = (idx, event) => {
+  event.dataTransfer.dropEffect = "move";
+};
+const onPcbDrop = (idx, event) => {
+  event.preventDefault();
+  if (dragPcbIndex >= 0 && dragPcbIndex !== idx) {
+    drillStore.reorderPcbs(dragPcbIndex, idx);
+    drillStore.triggerCanvasUpdate();
+  }
+  dragPcbIndex = -1;
+};
+const onPcbDragEnd = () => { dragPcbIndex = -1; };
+
+// PCB context menu
+const pcbContextMenu = ref({ show: false, x: 0, y: 0, index: -1 });
+const showPcbContextMenu = (event, idx) => {
+  pcbContextMenu.value = { show: true, x: event.clientX, y: event.clientY, index: idx };
+};
+const hidePcbContextMenu = () => { pcbContextMenu.value.show = false; };
+const duplicatePcbFromMenu = () => {
+  const idx = pcbContextMenu.value.index;
+  if (idx >= 0 && drillStore.pcbs[idx]) {
+    duplicatePcb(drillStore.pcbs[idx].id);
+  }
+  hidePcbContextMenu();
+};
+const removePcbFromMenu = () => {
+  const idx = pcbContextMenu.value.index;
+  if (idx >= 0 && drillStore.pcbs[idx]) {
+    removePcb(drillStore.pcbs[idx].id);
+  }
+  hidePcbContextMenu();
+};
+
 const clearFile = () => {
   drillStore.clearDrillFile();
   drillStore.triggerCanvasUpdate();
@@ -1575,13 +1731,17 @@ const clearFile = () => {
 
 const handleCanvasDrop = (event) => {
   const file = Array.from(event.dataTransfer.files).find(f =>
-    f.name.endsWith(".drl") || f.name.endsWith(".txt") || f.name.endsWith(".json")
+    f.name.endsWith(".drl") || f.name.endsWith(".txt") || f.name.endsWith(".json") || f.name.endsWith(".zip")
   );
   if (!file) return;
 
   const ext = file.name.split('.').pop().toLowerCase();
   if (ext === "json") {
     parseProjectFile(file);
+  } else if (ext === "zip") {
+    if (importWizardRef.value) {
+      importWizardRef.value.openZipFile(file);
+    }
   } else {
     parseDrillFile(file);
   }
@@ -1604,6 +1764,58 @@ function downloadExampleDrillFile() {
 </script>
 
 <style scoped>
+.pcb-tray-section {
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #f8f9fa;
+}
+.pcb-list {
+  max-height: 150px;
+  overflow-y: auto;
+}
+.pcb-list-item {
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  border: 1px solid transparent;
+}
+.pcb-list-item:hover {
+  background: #e9ecef;
+}
+.pcb-list-item.active {
+  background: #cfe2ff;
+  border-color: #86b7fe;
+}
+.pcb-name {
+  max-width: 160px;
+}
+.pcb-context-menu {
+  position: fixed;
+  z-index: 1050;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 4px 0;
+  min-width: 140px;
+}
+.pcb-context-menu .dropdown-item {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.pcb-context-menu .dropdown-item:hover {
+  background: #f0f0f0;
+}
+.pcb-properties-section {
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #f8f9fa;
+}
+
 .toolpath-canvas {
   border: 1px solid #eeeeee;
   width: 100%;

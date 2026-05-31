@@ -361,7 +361,12 @@ function initScene(gcode) {
 }
 
 function getPCBBounds() {
-  const allBed = drillStore.drillData.map(d => drillStore.drillToBedSpace(d));
+  let allBed = [];
+  for (const pcb of drillStore.pcbs) {
+    for (const d of pcb.drillData) {
+      allBed.push(drillStore.drillToBedSpace(d, pcb));
+    }
+  }
   if (allBed.length === 0) return { minX: 0, maxX: 50, minY: 0, maxY: 50 };
   const xs = allBed.map(p => p.x);
   const ys = allBed.map(p => p.y);
@@ -441,56 +446,67 @@ function buildPCB() {
   removePCBGroup();
   pcbGroup = new THREE.Group();
 
-  const b = getPCBBounds();
-  const pw = b.maxX - b.minX;
-  const ph = b.maxY - b.minY;
-  const thick = drillStore.profiles[drillStore.currentProfile]?.pcbThickness ?? 1.6;
+  for (const pcb of drillStore.pcbs) {
+    const thick = pcb.thickness ?? 1.6;
 
-  // PCB board (green, matching 2D branding)
-  const pcbGeom = new THREE.BoxGeometry(pw, ph, thick);
-  const pcbMat = new THREE.MeshStandardMaterial({ color: 0x1b8a3e, roughness: 0.55, metalness: 0.05 });
-  const pcb = new THREE.Mesh(pcbGeom, pcbMat);
-  pcb.position.set(b.minX + pw / 2, b.minY + ph / 2, -thick / 2);
-  pcbGroup.add(pcb);
-
-  // Drill holes as dark circles on surface
-  const allBed = drillStore.drillData.map(d => ({ bed: drillStore.drillToBedSpace(d), ...d }));
-  if (allBed.length > 0) {
-    const holeGeom = new THREE.CircleGeometry(0.4, 12);
-    const holeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-    const holes = new THREE.InstancedMesh(holeGeom, holeMat, allBed.length);
-    const dummy = new THREE.Object3D();
-    for (let i = 0; i < allBed.length; i++) {
-      dummy.position.set(allBed[i].bed.x, allBed[i].bed.y, 0.02);
-      dummy.updateMatrix();
-      holes.setMatrixAt(i, dummy.matrix);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const d of pcb.drillData) {
+      const bed = drillStore.drillToBedSpace(d, pcb);
+      if (bed.x < minX) minX = bed.x;
+      if (bed.x > maxX) maxX = bed.x;
+      if (bed.y < minY) minY = bed.y;
+      if (bed.y > maxY) maxY = bed.y;
     }
-    pcbGroup.add(holes);
-  }
+    if (pcb.drillData.length === 0) continue;
 
-  // Solder point markers (copper/red rings matching 2D)
-  const solderPts = drillStore.path
-    .map(id => drillStore.drillData.find(d => d.id === id))
-    .filter(d => d && d.solder)
-    .map(d => drillStore.drillToBedSpace(d));
+    const pad = 3;
+    const pw = maxX - minX + pad * 2;
+    const ph = maxY - minY + pad * 2;
+    const cx = minX + (maxX - minX) / 2;
+    const cy = minY + (maxY - minY) / 2;
 
-  if (solderPts.length > 0) {
-    const ringGeom = new THREE.RingGeometry(0.35, 0.9, 16);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0xdd3333, side: THREE.DoubleSide });
-    const rings = new THREE.InstancedMesh(ringGeom, ringMat, solderPts.length);
-    const dummy = new THREE.Object3D();
-    for (let i = 0; i < solderPts.length; i++) {
-      dummy.position.set(solderPts[i].x, solderPts[i].y, 0.03);
-      dummy.updateMatrix();
-      rings.setMatrixAt(i, dummy.matrix);
+    const pcbGeom = new THREE.BoxGeometry(pw, ph, thick);
+    const pcbMat = new THREE.MeshStandardMaterial({ color: 0x1b8a3e, roughness: 0.55, metalness: 0.05 });
+    const mesh = new THREE.Mesh(pcbGeom, pcbMat);
+    mesh.position.set(cx, cy, -thick / 2);
+    pcbGroup.add(mesh);
+
+    const allBed = pcb.drillData.map(d => ({ bed: drillStore.drillToBedSpace(d, pcb), ...d }));
+    if (allBed.length > 0) {
+      const holeGeom = new THREE.CircleGeometry(0.4, 12);
+      const holeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+      const holes = new THREE.InstancedMesh(holeGeom, holeMat, allBed.length);
+      const dummy = new THREE.Object3D();
+      for (let i = 0; i < allBed.length; i++) {
+        dummy.position.set(allBed[i].bed.x, allBed[i].bed.y, 0.02);
+        dummy.updateMatrix();
+        holes.setMatrixAt(i, dummy.matrix);
+      }
+      pcbGroup.add(holes);
     }
-    pcbGroup.add(rings);
+
+    const solderPts = pcb.path
+      .map(id => pcb.drillData.find(d => d.id === id))
+      .filter(d => d && d.solder)
+      .map(d => drillStore.drillToBedSpace(d, pcb));
+
+    if (solderPts.length > 0) {
+      const ringGeom = new THREE.RingGeometry(0.35, 0.9, 16);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xdd3333, side: THREE.DoubleSide });
+      const rings = new THREE.InstancedMesh(ringGeom, ringMat, solderPts.length);
+      const dummy = new THREE.Object3D();
+      for (let i = 0; i < solderPts.length; i++) {
+        dummy.position.set(solderPts[i].x, solderPts[i].y, 0.03);
+        dummy.updateMatrix();
+        rings.setMatrixAt(i, dummy.matrix);
+      }
+      pcbGroup.add(rings);
+    }
   }
 
   scene.add(pcbGroup);
 
-  // No-go zones (stay on scene, not in pcbGroup)
-  for (const z of drillStore.noGoZones) {
+  for (const z of drillStore.globalNoGoZones) {
     const zw = z.x2 - z.x1;
     const zh = z.y2 - z.y1;
     const zoneGeom = new THREE.BoxGeometry(zw, zh, 0.3);
@@ -503,6 +519,7 @@ function buildPCB() {
   }
 
   // Build plate with tiled brick texture (matching 2D grid pattern)
+  const maxThick = Math.max(...drillStore.pcbs.map(p => p.thickness ?? 1.6), 1.6);
   const bedW = drillStore.currentBedWidth || Math.max(pw, ph) * 2;
   const bedH = drillStore.currentBedHeight || Math.max(pw, ph) * 2;
   const plateGeom = new THREE.PlaneGeometry(bedW, bedH);
@@ -510,7 +527,7 @@ function buildPCB() {
   plateTex.repeat.set(bedW / 16, bedH / 16);
   const plateMat = new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.9, metalness: 0.0 });
   const plate = new THREE.Mesh(plateGeom, plateMat);
-  plate.position.set(bedW / 2, bedH / 2, -thick - 0.05);
+  plate.position.set(bedW / 2, bedH / 2, -maxThick - 0.05);
   scene.add(plate);
 }
 

@@ -31,35 +31,39 @@ No linting or formatting tools are configured. Consider adding ESLint and Pretti
 
 ### Key Components
 
-1. **State Management** (`src/stores/drillStore.js`):
-   - Central store managing drill data, machine profiles, and G-code generation
-   - Persisted to localStorage
-   - Handles profile management, drill file processing, and configuration
+1. **State Management** (`src/stores/store.js`):
+   - Central store managing multi-PCB tray, machine profiles, and G-code generation
+   - `pcbs[]` array holds all loaded PCBs; `activePcbId` tracks the selected PCB
+   - `createPcb()` factory function creates PCB objects with defaults
+   - Backward-compatible getter/setters proxy `drillStore.drillData`, `.path`, `.originOffsetX/Y`, etc. to the active PCB
+   - No-go zones split into `globalNoGoZones` (bed space) and per-PCB `noGoZones` (drill space)
+   - `splineCurves` maps pad area to soak/feed/dwell values
 
 2. **Core Functionality**:
-   - **File Processing**: `src/composables/useFileHandlers.js` - Parses Excellon drill files
-   - **G-code Generation**: `src/composables/useGcodeGenerator.js` - Converts drill points to G-code using customizable templates
-   - **2D Visualization**: `src/components/ToolpathEditor.vue` - Interactive canvas editor for PCB preview and path editing
-   - **3D Simulator**: `src/components/GcodeSimulator.vue` - Three.js G-code simulator with animated soldering iron, solder point timeline markers/skip navigation, and optional GLB/GLTF/STL/STEP/IGES model loading
+   - **File Processing**: `src/composables/useFileHandlers.js` - Parses Excellon drill files, creates PCB objects
+   - **G-code Generation**: `src/composables/useGcodeGenerator.js` - Multi-PCB G-code with safe-Z lifts, spline interpolation, PCB comments
+   - **2D Visualization**: `src/components/ToolpathEditor.vue` - Interactive canvas editor with sidebar PCB list
+   - **3D Simulator**: `src/components/GcodeSimulator.vue` - Three.js simulator rendering all PCBs
 
 3. **Main Views**:
    - **HomeView**: Main toolpath editor interface
-   - **GettingStartedView**: User guide and documentation
 
 ### G-code Generation Flow
-1. User uploads Excellon drill file
-2. File is parsed to extract drill coordinates
+1. User uploads Excellon drill file(s) — each becomes a PCB in the tray
+2. Files are parsed to extract drill coordinates per PCB
 3. Points are optimized using nearest-neighbor algorithm (with no-go zone avoidance)
 4. G-code is generated using customizable templates (start, per-point, end)
-5. Waypoint G0 rapid moves are inserted between solder points when the path must route around no-go zones
-6. User can preview in 2D canvas, simulate in 3D, and download the result
+5. Safe-Z lifts are inserted between PCB transitions
+6. Spline curves map pad area to soak/feed/dwell values
+7. Waypoint G0 rapid moves are inserted when the path must route around no-go zones
+8. User can preview in 2D canvas, simulate in 3D, and download the result
 
 ### Important Implementation Details
 
 - **Coordinate System**: Uses Three.js coordinate system with transformations for PCB visualization
 - **Path Optimization**: Implements nearest-neighbor algorithm for efficient soldering paths, with no-go zone avoidance using visibility graph + Dijkstra shortest path routing
-- **No-Go Zones**: Rectangular exclusion areas (bed coordinate space) that the path must avoid. Stored in `drillStore.noGoZones`. Points inside zones are excluded; path segments crossing zones are routed around zone corners via `computeRouteAroundZones()`. Waypoints appear in both canvas rendering and G-code output.
-- **Templates**: G-code templates support variable substitution for coordinates and offsets
+- **No-Go Zones**: Split into global (bed space, `globalNoGoZones`) and per-PCB (drill space, `pcb.noGoZones`). Points inside zones are excluded; path segments crossing zones are routed around zone corners via `computeRouteAroundZones()`. Waypoints appear in both canvas rendering and G-code output.
+- **Templates**: G-code templates support variable substitution for coordinates and offsets. Per-point templates include `PCB_THICKNESS`, `PCB_INDEX`, `PCB_NAME`.
 - **Mobile Support**: Detects mobile devices and shows appropriate messaging
 - **Analytics**: Includes Google Analytics and Facebook Pixel integration
 - **Persistence**: All configuration and profiles stored in localStorage via Pinia plugin

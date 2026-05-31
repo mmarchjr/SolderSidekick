@@ -11,8 +11,8 @@
 
         <!-- Toolpath Editor UI -->
 
-        <UploadDrillFile />
-        <button v-if="drillStore.drillFilename" class="btn btn-outline-light btn-sm nav-link" @click="saveProject">
+        <UploadDrillFile @openZip="handleZipFile" />
+        <button v-if="drillStore.pcbs.length > 0" class="btn btn-outline-light btn-sm nav-link" @click="saveProject">
             <i class="fa-solid fa-file-arrow-down"></i> Save Project
         </button>
 
@@ -54,6 +54,8 @@
         </div>
       </div>
     </header>
+
+    <ImportWizard ref="importWizardRef" />
   
   </template>
   
@@ -62,12 +64,20 @@
   import { ref } from "vue";
   import { useDrillStore } from "@/stores/store";
   import UploadDrillFile from "@/components/UploadDrillFile.vue";
+  import ImportWizard from "@/components/ImportWizard.vue";
   import { useFileHandlers } from "@/composables/useFileHandlers";
   const { saveProject } = useFileHandlers();
 
   
 
 const drillStore = useDrillStore();
+const importWizardRef = ref(null);
+
+const handleZipFile = (file) => {
+  if (importWizardRef.value) {
+    importWizardRef.value.openZipFile(file);
+  }
+};
   
   // Define links for GitHub, Shop, and Donate
   const githubRepo = ref("https://github.com/RinthLabs/SolderSidekick");

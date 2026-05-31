@@ -11,7 +11,7 @@
         ref="fileInput"
         class="d-none"
         @change="handleFiles"
-        accept=".drl,.txt,.json"
+        accept=".drl,.txt,.json,.zip,.gbr,.gtl,.gbl,.gts,.gbs,.gto,.gbo,.gtp,.gbp,.gko,.gml,.gm1"
       />
 
     </div>
@@ -26,6 +26,7 @@ import { ref } from "vue";
 import { useFileHandlers } from "@/composables/useFileHandlers";
 const { parseDrillFile, parseProjectFile } = useFileHandlers();
 
+const emit = defineEmits(["openZip"]);
 
 // const drillStore = useDrillStore();
 const fileInput = ref(null);
@@ -39,6 +40,8 @@ const handleFiles = (event) => {
   const ext = file.name.split('.').pop().toLowerCase();
   if (ext === 'json') {
     parseProjectFile(file);
+  } else if (ext === 'zip') {
+    emit("openZip", file);
   } else {
     parseDrillFile(file);
   }

@@ -1,7 +1,8 @@
 <script setup>
 import { ref, watch, onMounted, computed  } from "vue";
 import ProfileManager from './ProfileManager.vue';
-import GcodeEditor from './GcodeEditor.vue'; // Adjust path if needed
+import GcodeEditor from './GcodeEditor.vue';
+import SplineGraphEditor from './SplineGraphEditor.vue';
 
 import { useDrillStore } from "@/stores/store";
 
@@ -16,20 +17,6 @@ const selectedProfile = computed({
 });
 
 const profileNames = computed(() => Object.keys(drillStore.profiles));
-
-// Origin inputs
-const zeroX = computed({
-  get: () => drillStore.profiles[drillStore.currentProfile].zeroX,
-  set: (val) => drillStore.updateCurrentProfileSettings({ zeroX: val })
-});
-const zeroY = computed({
-  get: () => drillStore.profiles[drillStore.currentProfile].zeroY,
-  set: (val) => drillStore.updateCurrentProfileSettings({ zeroY: val })
-});
-const zeroZ = computed({
-  get: () => drillStore.profiles[drillStore.currentProfile].zeroZ,
-  set: (val) => drillStore.updateCurrentProfileSettings({ zeroZ: val })
-});
 
 // Homing inputs
 const homeX = computed({
@@ -141,6 +128,52 @@ function resetToDefaults() {
   drillStore.resetCurrentProfileToDefault();
 }
 
+const splineSoak = computed({
+  get: () => drillStore.splineCurves.soak,
+  set: (val) => { drillStore.splineCurves.soak = val; }
+});
+const splineFeed = computed({
+  get: () => drillStore.splineCurves.feed,
+  set: (val) => { drillStore.splineCurves.feed = val; }
+});
+const splineDwell = computed({
+  get: () => drillStore.splineCurves.dwell,
+  set: (val) => { drillStore.splineCurves.dwell = val; }
+});
+const splineGraphMaxX = computed({
+  get: () => drillStore.splineGraphMaxX,
+  set: (val) => { drillStore.splineGraphMaxX = val; }
+});
+const splineGraphMaxY = computed({
+  get: () => drillStore.splineGraphMaxY,
+  set: (val) => { drillStore.splineGraphMaxY = val; }
+});
+const splineGraphXIncrement = computed({
+  get: () => drillStore.splineGraphXIncrement,
+  set: (val) => { drillStore.splineGraphXIncrement = val; }
+});
+
+const allDrillAreas = computed(() => {
+  const areas = [];
+  const viaFilterDiameter = drillStore.viaFilterDiameter ?? 0.4;
+  
+  for (const pcb of drillStore.pcbs) {
+    for (const d of pcb.drillData) {
+      const diameter = parseFloat(d.size);
+      // Only include holes larger than the via filter diameter
+      if (!isNaN(diameter) && diameter > viaFilterDiameter) {
+        areas.push(Math.PI * Math.pow(diameter / 2, 2));
+      }
+    }
+  }
+  return areas;
+});
+
+const maxDrillArea = computed(() => {
+  if (allDrillAreas.value.length === 0) return 50;
+  return Math.max(...allDrillAreas.value) * 1.2;
+});
+
 </script>
 
 <template>
@@ -171,22 +204,6 @@ function resetToDefaults() {
             <div class="row">
               <div class="col-md-6">
                 <h5 class="mt-3"><i class="fa-solid fa-play"></i> Start G-code</h5>
-                
-                <label class="form-label" title="{ORIGIN_X} {ORIGIN_Y} {ORIGIN_Z}">Origin XYZ</label>
-                <div class="row">
-                  <div class="col-auto d-flex align-items-center">
-                    <label class="me-2 mb-0" style="min-width: 1.5em;"><b>X</b></label>
-                    <input type="number" class="form-control form-control-sm" v-model="zeroX" step="0.1"/>
-                  </div>
-                  <div class="col-auto d-flex align-items-center">
-                    <label class="me-2 mb-0" style="min-width: 1.5em;"><b>Y</b></label>
-                    <input type="number" class="form-control form-control-sm" v-model="zeroY" step="0.1"/>
-                  </div>
-                  <div class="col-auto d-flex align-items-center">
-                    <label class="me-2 mb-0" style="min-width: 1.5em;"><b>Z</b></label>
-                    <input type="number" class="form-control form-control-sm" v-model="zeroZ" step="0.1"/>
-                  </div>
-                </div>
 
                 <label class="form-label mt-3" title="{PCB_THICKNESS}">PCB Thickness (mm)</label>
                 <input type="number" class="form-control" v-model="pcbThickness" step="0.1" />
@@ -272,6 +289,62 @@ function resetToDefaults() {
                   title="End G-code"
                   icon="fa-stop"
                   @update:code="endGcode = $event"
+                />
+              </div>
+            </div>
+
+            <!-- Spline Graphs -->
+            <div class="row mt-4">
+              <div class="col-12">
+                <h5><i class="fa-solid fa-chart-line"></i> Spline Graphs</h5>
+                <p class="text-muted small">Map pad area (mm²) to soldering parameters. Click to add points, drag to adjust, right-click to remove. These override per-point soak/feed/dwell values.</p>
+                
+                <div class="row mt-2">
+                  <div class="col-md-4">
+                    <label class="form-label form-label-sm">Graph Max X (mm²)</label>
+                    <input type="number" class="form-control form-control-sm" v-model.number="splineGraphMaxX" step="1" min="1" />
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label form-label-sm">Graph Max Y (value)</label>
+                    <input type="number" class="form-control form-control-sm" v-model.number="splineGraphMaxY" step="0.1" min="0.1" />
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label form-label-sm">X Increment (snap)</label>
+                    <input type="number" class="form-control form-control-sm" v-model.number="splineGraphXIncrement" step="0.5" min="0.5" />
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <SplineGraphEditor
+                  v-model="splineSoak"
+                  title="Soak Time"
+                  yLabel="Time (s)"
+                  :maxX="splineGraphMaxX"
+                  :maxY="splineGraphMaxY"
+                  :xIncrement="splineGraphXIncrement"
+                  :drillAreas="allDrillAreas"
+                />
+              </div>
+              <div class="col-md-4">
+                <SplineGraphEditor
+                  v-model="splineFeed"
+                  title="Solder Feed"
+                  yLabel="Feed (mm)"
+                  :maxX="splineGraphMaxX"
+                  :maxY="splineGraphMaxY"
+                  :xIncrement="splineGraphXIncrement"
+                  :drillAreas="allDrillAreas"
+                />
+              </div>
+              <div class="col-md-4">
+                <SplineGraphEditor
+                  v-model="splineDwell"
+                  title="Dwell Time"
+                  yLabel="Time (s)"
+                  :maxX="splineGraphMaxX"
+                  :maxY="splineGraphMaxY"
+                  :xIncrement="splineGraphXIncrement"
+                  :drillAreas="allDrillAreas"
                 />
               </div>
             </div>

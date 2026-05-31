@@ -7,28 +7,28 @@
         </option>
       </select>
       
-      <div class="dropdown">
+      <div class="dropdown" ref="dropdownElement" @click.stop>
         <button 
-          class="btn btn-outline-secondary dropdown-toggle" 
+          class="btn btn-outline-secondary" 
           type="button" 
-          data-bs-toggle="dropdown"
+          @click="isDropdownOpen = !isDropdownOpen"
           title="Profile options"
         >
           <i class="fas fa-cog"></i>
         </button>
-        <ul class="dropdown-menu">
+        <ul v-show="isDropdownOpen" class="dropdown-menu show">
           <li>
-            <a class="dropdown-item" href="#" @click.prevent="showNewProfile = true">
+            <a class="dropdown-item" href="#" @click.prevent="showNewProfile = true; isDropdownOpen = false">
               <i class="fas fa-plus me-2"></i>New Profile
             </a>
           </li>
           <li>
-            <a class="dropdown-item" href="#" @click.prevent="showDuplicateProfile = true">
+            <a class="dropdown-item" href="#" @click.prevent="showDuplicateProfile = true; isDropdownOpen = false">
               <i class="fas fa-copy me-2"></i>Duplicate Profile
             </a>
           </li>
           <li>
-            <a class="dropdown-item" href="#" @click.prevent="showRenameProfile = true">
+            <a class="dropdown-item" href="#" @click.prevent="showRenameProfile = true; isDropdownOpen = false">
               <i class="fas fa-edit me-2"></i>Rename Profile
             </a>
           </li>
@@ -37,7 +37,7 @@
             <a 
               class="dropdown-item text-danger" 
               href="#" 
-              @click.prevent="deleteCurrentProfile"
+              @click.prevent="deleteCurrentProfile; isDropdownOpen = false"
               :class="{ disabled: profileNames.length <= 1 }"
             >
               <i class="fas fa-trash me-2"></i>Delete Profile
@@ -134,11 +134,12 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch } from 'vue';
+import { ref, computed, nextTick, watch, onMounted } from 'vue';
 import { useDrillStore } from '@/stores/store';
 
 const drillStore = useDrillStore();
 
+const isDropdownOpen = ref(false);
 const showNewProfile = ref(false);
 const showRenameProfile = ref(false);
 const showDuplicateProfile = ref(false);
@@ -151,6 +152,7 @@ const error = ref('');
 const newProfileInput = ref(null);
 const renameProfileInput = ref(null);
 const duplicateProfileInput = ref(null);
+const dropdownElement = ref(null);
 
 const selectedProfile = computed({
   get: () => drillStore.currentProfile,
@@ -158,6 +160,43 @@ const selectedProfile = computed({
 });
 
 const profileNames = computed(() => Object.keys(drillStore.profiles));
+
+// Handle clicks outside dropdown
+onMounted(() => {
+  const handleClickOutside = (event) => {
+    if (dropdownElement.value && !dropdownElement.value.contains(event.target)) {
+      isDropdownOpen.value = false;
+    }
+  };
+
+  document.addEventListener('click', handleClickOutside);
+
+  return () => {
+    document.removeEventListener('click', handleClickOutside);
+  };
+});
+
+// Dropdown handlers
+const handleNewProfile = () => {
+  isDropdownOpen.value = false;
+  showNewProfile.value = true;
+};
+
+const handleDuplicateProfile = () => {
+  isDropdownOpen.value = false;
+  showDuplicateProfile.value = true;
+};
+
+const handleRenameProfile = () => {
+  isDropdownOpen.value = false;
+  showRenameProfile.value = true;
+};
+
+// Close dropdown when a menu item is clicked or pressing escape
+const handleMenuItemClick = (callback) => {
+  callback();
+  isDropdownOpen.value = false;
+};
 
 // Auto-focus inputs when modals open
 watch(showNewProfile, async (val) => {
@@ -249,6 +288,25 @@ const deleteCurrentProfile = () => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  position: relative;
+}
+
+.dropdown {
+  position: relative;
+  z-index: 1040;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1041;
+  margin-top: 0.5rem;
+  display: none;
+}
+
+.dropdown-menu.show {
+  display: block;
 }
 
 .modal-backdrop {
