@@ -28,11 +28,6 @@ G28 X Y ; Home X and Y
 G28 Z ; Home Z
 G0 Z{START_SAFE_Z} F800 ; Initial lift height
 
-M117 Moving to 0,0,0
-G0 X{ORIGIN_X} Y{ORIGIN_Y} F6000 ; Move to start position X and Y
-G0 Z{ORIGIN_Z} F800 ; Move to start position Z
-G92 X0 Y0 Z0 ; Set current position as 0,0,0
-
 M221 S{MULTIPLIER} ; Extruder multiplier
 M302 S0 ; Allow cold extrusion
 M83 ; Set extruder to relative mode
@@ -56,7 +51,7 @@ G4 P{DWELL * 1000} ; Dwell time (ms)
 G1 Z{SOLDER_SAFE_Z} F800 ; Lift soldering iron`;
 
 const endGcodeTemplate = `; End G-code
-M117 Solder Sidekick Done!
+M117 Soldering Complete!
 M73 P100 ; Set progress bar to 100%
 G0 Z{END_SAFE_Z} F800 ; Lift soldering iron
 
@@ -95,7 +90,6 @@ const defaultProfileSettings = {
   zeroX: null,
   zeroY: null,
   zeroZ: null,
-  pcbThickness: 1.6,
   startSafeZ: 12,
   solderSafeZ: 3.5,
   solderPrimeZ: 3.5,
@@ -210,11 +204,14 @@ export const useDrillStore = defineStore("drill", () => {
   });
 
   const currentPcbThickness = computed(() => {
-    return activePcb.value?.thickness ?? profiles.value[currentProfile.value]?.pcbThickness ?? 1.6;
+    return activePcb.value?.thickness ?? 1.6;
   });
 
   const currentBedWidth = computed(() => profiles.value[currentProfile.value]?.bedWidth ?? 235);
   const currentBedHeight = computed(() => profiles.value[currentProfile.value]?.bedHeight ?? 235);
+  const zeroX = computed(() => profiles.value[currentProfile.value]?.zeroX ?? null);
+  const zeroY = computed(() => profiles.value[currentProfile.value]?.zeroY ?? null);
+  const zeroZ = computed(() => profiles.value[currentProfile.value]?.zeroZ ?? null);
 
   // --- Backward-compatible proxies to active PCB ---
   const drillData = computed({
@@ -374,7 +371,6 @@ export const useDrillStore = defineStore("drill", () => {
     const settings = profiles.value[name];
     if (!settings) return;
     // Load all profile settings into their respective refs
-    if (settings.pcbThickness !== undefined) pcbThickness.value = settings.pcbThickness;
     if (settings.feedPrime !== undefined) feedPrime.value = settings.feedPrime;
     if (settings.feedRetract !== undefined) feedRetract.value = settings.feedRetract;
     // Note: Most settings are accessed directly from profiles.value[currentProfile.value]
@@ -839,6 +835,7 @@ export const useDrillStore = defineStore("drill", () => {
 
     // Getters
     activePcb, selectedPoints, currentPcbThickness, currentBedWidth, currentBedHeight,
+    zeroX, zeroY, zeroZ,
 
     // Writable proxies
     drillData, path, toolSizes, drillFilename,

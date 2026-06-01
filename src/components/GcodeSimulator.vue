@@ -185,7 +185,6 @@ function extractParams(line) {
 function parseGcode(text) {
   const cmds = [];
   let x = 0, y = 0, z = 0, feed = 6000;
-  let originSet = false;
 
   for (const raw of text.split('\n')) {
     const semi = raw.indexOf(';');
@@ -205,7 +204,6 @@ function parseGcode(text) {
       if (p.X !== undefined) x = p.X;
       if (p.Y !== undefined) y = p.Y;
       if (p.Z !== undefined) z = p.Z;
-      originSet = true;
       cmds.push({ type: 'pos', x, y, z });
       continue;
     }
@@ -218,7 +216,7 @@ function parseGcode(text) {
       if (p.F !== undefined) feed = p.F;
 
       const dist = Math.sqrt((nx - x) ** 2 + (ny - y) ** 2 + (nz - z) ** 2);
-      if (dist > 0.001 && originSet) {
+      if (dist > 0.001) {
         const speed = rapid ? Math.max(feed, 6000) : feed;
         cmds.push({
           type: 'move', fx: x, fy: y, fz: z,
@@ -233,7 +231,7 @@ function parseGcode(text) {
     if (code.startsWith('G4')) {
       const p = extractParams(code);
       const dur = (p.P ?? 0) / 1000 + (p.S ?? 0);
-      if (dur > 0 && originSet) {
+      if (dur > 0) {
         cmds.push({ type: 'dwell', duration: dur, x, y, z });
       }
       continue;
@@ -446,6 +444,8 @@ function buildPCB() {
   removePCBGroup();
   pcbGroup = new THREE.Group();
 
+  let bedW = 235, bedH = 235;
+
   for (const pcb of drillStore.pcbs) {
     const thick = pcb.thickness ?? 1.6;
 
@@ -462,6 +462,8 @@ function buildPCB() {
     const pad = 3;
     const pw = maxX - minX + pad * 2;
     const ph = maxY - minY + pad * 2;
+    bedW = Math.max(bedW, pw);
+    bedH = Math.max(bedH, ph);
     const cx = minX + (maxX - minX) / 2;
     const cy = minY + (maxY - minY) / 2;
 
@@ -520,8 +522,8 @@ function buildPCB() {
 
   // Build plate with tiled brick texture (matching 2D grid pattern)
   const maxThick = Math.max(...drillStore.pcbs.map(p => p.thickness ?? 1.6), 1.6);
-  const bedW = drillStore.currentBedWidth || Math.max(pw, ph) * 2;
-  const bedH = drillStore.currentBedHeight || Math.max(pw, ph) * 2;
+  bedW = drillStore.currentBedWidth || bedW * 2;
+  bedH = drillStore.currentBedHeight || bedH * 2;
   const plateGeom = new THREE.PlaneGeometry(bedW, bedH);
   const plateTex = createBuildPlateTexture();
   plateTex.repeat.set(bedW / 16, bedH / 16);
@@ -881,13 +883,21 @@ function formatTime(sec) {
 
 function show(gcode) {
   if (!modalEl.value) return;
+  console.log('--- G-code fed to simulator ---');
+  console.log(gcode);
+  console.log('--- End G-code ---');
 
   bsModal = new Modal(modalEl.value);
 
   modalEl.value.addEventListener('shown.bs.modal', () => {
-    initScene(gcode);
-    isPlaying.value = true;
-    lastTimestamp = null;
+    try {
+      initScene(gcode);
+      isPlaying.value = true;
+      lastTimestamp = null;
+    } catch (e) {
+      console.error('Simulator init error:', e);
+      statusMessage.value = 'Error: ' + e.message;
+    }
   }, { once: true });
 
   modalEl.value.addEventListener('hidden.bs.modal', () => {

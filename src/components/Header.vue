@@ -4,9 +4,8 @@
   
   <header class="navbar navbar-expand-lg navbar-dark bg-dark">
       <div class="container-fluid">
-        <!-- Logo -->
         <a class="navbar-brand d-flex align-items-center logo" href="#">
-          <img src="/logo/solder-sidekick-logo-dark-bg.svg" alt="Solder Sidekick Logo" height="80" class="" />
+          <span style="color:white;font-size:1.5rem;font-weight:700">Toolpath Editor</span>
         </a>
 
         <!-- Toolpath Editor UI -->
@@ -35,21 +34,7 @@
   
         <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
           <ul class="navbar-nav">
-            <li class="nav-item">
-              <a class="btn btn-outline-light btn-sm d-flex align-items-center nav-link" :href="githubRepo" target="_blank">
-                <i class="fab fa-github me-2"></i> GitHub
-              </a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link btn btn-outline-light btn-sm d-flex align-items-center" :href="shopLink" target="_blank">
-                <i class="fas fa-shopping-cart me-2"></i> Shop
-              </a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link btn btn-outline-light btn-sm donate-button" :href="donateLink" target="_blank">
-                <i class="fas fa-donate me-2"></i> Donate
-              </a>
-            </li>
+
           </ul>
         </div>
       </div>
@@ -60,8 +45,7 @@
   </template>
   
   <script setup>
-  import { RouterLink, RouterView } from 'vue-router'
-  import { ref } from "vue";
+import { ref } from "vue";
   import { useDrillStore } from "@/stores/store";
   import UploadDrillFile from "@/components/UploadDrillFile.vue";
   import ImportWizard from "@/components/ImportWizard.vue";
@@ -79,10 +63,6 @@ const handleZipFile = (file) => {
   }
 };
   
-  // Define links for GitHub, Shop, and Donate
-  const githubRepo = ref("https://github.com/RinthLabs/SolderSidekick");
-  const shopLink = ref("https://rinthlabs.com/products/solder-sidekick-notification-sign-up");
-  const donateLink = ref("https://www.paypal.com/donate/?hosted_button_id=CF4B9M4MD2HY2");
   
 
   </script>

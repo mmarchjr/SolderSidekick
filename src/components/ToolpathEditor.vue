@@ -198,7 +198,7 @@
 
     
 
-    <div v-if="zeroX === null || zeroY === null || zeroZ === null" class="measure-note my-1">
+    <div v-if="drillStore.zeroX === null || drillStore.zeroY === null || drillStore.zeroZ === null" class="measure-note my-1">
       <p class="text-muted">Measure/enter the origin offset for your machine</p>
     </div>
 
@@ -306,7 +306,7 @@
           <button class="btn btn-outline-dark" @click="downloadExampleDrillFile">
             <i class="fa fa-download me-1"></i> Download PCB_breadboard.drl
           </button>
-          <a href="https://github.com/RinthLabs/SolderSidekick/blob/main/Documentation.md" target="_blank" class="d-block mt-3">
+          <a href="#" class="d-block mt-3 text-muted">
             How to export drill file
           </a>
         </div>
@@ -416,11 +416,10 @@ const isSelectingOriginPoint = ref(false);
 const selectedOriginPoint = ref(null);
 
 const pcbThickness = computed({
-  get: () => drillStore.profiles[drillStore.currentProfile].pcbThickness ?? drillStore.pcbThickness,
+  get: () => drillStore.pcbThickness,
   set: (val) => {
     drillStore.saveTransformUndoState();
-    drillStore.updateCurrentProfileSettings({ pcbThickness: val });
-    drillStore.pcbThickness = val; // Also update store level
+    drillStore.pcbThickness = val;
     updateCanvas();
   }
 });

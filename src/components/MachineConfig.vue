@@ -33,11 +33,9 @@ const homeZ = computed({
 });
 
 
-// Add after the existing computed properties
 const pcbThickness = computed({
-  get: () => drillStore.profiles[drillStore.currentProfile].pcbThickness ?? drillStore.pcbThickness,
+  get: () => drillStore.pcbThickness,
   set: (val) => {
-    drillStore.updateCurrentProfileSettings({ pcbThickness: val });
     drillStore.pcbThickness = val;
   }
 });

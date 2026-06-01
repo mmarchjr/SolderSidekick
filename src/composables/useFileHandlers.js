@@ -264,7 +264,7 @@ export function useFileHandlers() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${baseName}.soldersidekick.json`;
+    a.download = `${baseName}.pcb-project.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
