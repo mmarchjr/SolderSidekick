@@ -45,10 +45,10 @@
   </template>
   
   <script setup>
-import { ref } from "vue";
+import { ref, defineAsyncComponent } from "vue";
   import { useDrillStore } from "@/stores/store";
   import UploadDrillFile from "@/components/UploadDrillFile.vue";
-  import ImportWizard from "@/components/ImportWizard.vue";
+  const ImportWizard = defineAsyncComponent(() => import("@/components/ImportWizard.vue"));
   import { useFileHandlers } from "@/composables/useFileHandlers";
   const { saveProject } = useFileHandlers();
 

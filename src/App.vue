@@ -25,7 +25,7 @@
     <p class="mobile-note">
       This app runs on desktop. Here's a quick video — check it out on your computer later.
     </p>
-    <a href="/getting-started" class="btn btn-outline-light share-btn">
+    <a href="https://www.soldersidekick.com/getting-started" class="btn btn-outline-light share-btn">
       <i class="fa-solid fa-check me-2"></i> Getting Started
     </a>
   </div>

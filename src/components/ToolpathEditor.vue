@@ -331,9 +331,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick  } from "vue";
-import GcodeSimulator from "@/components/GcodeSimulator.vue";
-import ImportWizard from "@/components/ImportWizard.vue";
+import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick, defineAsyncComponent } from "vue";
+const GcodeSimulator = defineAsyncComponent(() => import("@/components/GcodeSimulator.vue"));
+const ImportWizard = defineAsyncComponent(() => import("@/components/ImportWizard.vue"));
 import ProfileManager from '@/components/ProfileManager.vue';
 import { useDrillStore } from "@/stores/store";
 import { useFileHandlers } from "@/composables/useFileHandlers";

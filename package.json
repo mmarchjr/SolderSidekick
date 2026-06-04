@@ -1,12 +1,55 @@
 {
-  "name": "solderrobot",
+  "name": "solder-sidekick",
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
+    "electron:build": "cross-env ELECTRON=true vite build && electron-builder -w --config",
+    "electron:package": "cross-env ELECTRON=true vite build && electron-builder -w --config"
+  },
+  "build": {
+    "appId": "com.solderprinter.app",
+    "productName": "Solder Printer",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64", "ia32"]
+        }
+      ],
+      "icon": null
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["universal"]
+        }
+      ],
+      "icon": null
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["universal"]
+        }
+      ],
+      "icon": null
+    }
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.7.2",
@@ -25,7 +68,12 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^10.0.3",
+    "cross-env": "^10.1.0",
+    "electron": "^42.3.2",
+    "electron-builder": "^26.8.1",
     "vite": "^6.1.0",
-    "vite-plugin-vue-devtools": "^7.7.2"
+    "vite-plugin-vue-devtools": "^7.7.2",
+    "wait-on": "^9.0.10"
   }
 }

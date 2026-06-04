@@ -48,12 +48,13 @@ G4 P{SOAK * 1000} ; Soak time (ms)
 G1 E{FEED} F500 ; Solder the point
 G1 E-{RETRACT} F800 ; Retract solder from touching soldering iron
 G4 P{DWELL * 1000} ; Dwell time (ms)
-G1 Z{SOLDER_SAFE_Z} F800 ; Lift soldering iron`;
+G1 Z{Z_OFFSET + SOLDER_SAFE_Z} F800 ; Lift soldering iron`;
 
 const endGcodeTemplate = `; End G-code
 M117 Soldering Complete!
 M73 P100 ; Set progress bar to 100%
 G0 Z{END_SAFE_Z} F800 ; Lift soldering iron
+G0 X200 Y200 ; Go to back corner
 
 M300 S440 P{BEEP} ; Beep
 G4 P500 ; Wait for 0.5 seconds
