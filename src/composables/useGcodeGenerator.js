@@ -91,16 +91,32 @@ export function useGcodeGenerator() {
       ORIGIN_X: profile.zeroX ?? 0,
       ORIGIN_Y: profile.zeroY ?? 0,
       ORIGIN_Z: profile.zeroZ ?? 0,
-      MULTIPLIER: profile.solderFeedMultiplier,
+      MULTIPLIER: profile.solderFeedMultiplier ?? 0,
     });
     gcode += "\n\n";
+
+    if (profile.periodicAtStart && profile.periodicHoleCount > 0) {
+      gcode += processTemplate(profile.periodicGcode, {
+        PERIODIC_HOLE_COUNT: profile.periodicHoleCount,
+        START_SAFE_Z: profile.startSafeZ,
+        END_SAFE_Z: profile.endSafeZ,
+        ORIGIN_X: profile.zeroX ?? 0,
+        ORIGIN_Y: profile.zeroY ?? 0,
+        ORIGIN_Z: profile.zeroZ ?? 0,
+        MULTIPLIER: profile.solderFeedMultiplier ?? 0,
+      });
+      gcode += "\n\n";
+    }
 
     let lastPcbId = null;
 
     solderPoints.forEach((point, index) => {
       if (point.pcbId !== lastPcbId) {
         if (lastPcbId !== null) {
-          gcode += `G0 Z${profile.startSafeZ.toFixed(2)} F800 ; Safe-Z lift between PCBs\n`;
+          gcode += processTemplate(profile.betweenBoardGcode, {
+            START_SAFE_Z: profile.startSafeZ,
+          });
+          gcode += "\n";
         }
         gcode += `; --- PCB ${point.pcbIndex + 1}: ${point.pcbName} ---\n`;
         lastPcbId = point.pcbId;
@@ -143,11 +159,11 @@ export function useGcodeGenerator() {
         SOAK: soakCurve.length > 0 ? interpolateSpline(soakCurve, padArea) : point.soak,
         FEED: feedCurve.length > 0 ? interpolateSpline(feedCurve, padArea) : point.feed,
         DWELL: dwellCurve.length > 0 ? interpolateSpline(dwellCurve, padArea) : point.dwell,
-        PRIME: profile.feedPrime,
-        PRIME_RETRACT: profile.feedRetract,
-        RETRACT: profile.retractAfterSolder,
-        SOLDER_SAFE_Z: profile.solderSafeZ,
-        SOLDER_PRIME_Z: profile.solderPrimeZ,
+        PRIME: profile.feedPrime ?? 0,
+        PRIME_RETRACT: profile.feedRetract ?? 0,
+        RETRACT: profile.retractAfterSolder ?? 0,
+        SOLDER_SAFE_Z: profile.solderSafeZ ?? 0,
+        SOLDER_PRIME_Z: profile.solderPrimeZ ?? 0,
         POINT_NUMBER: pointNumber,
         PROGRESS_PERCENT: progressPercent,
         PCB_THICKNESS: point.pcbThickness,
@@ -157,7 +173,33 @@ export function useGcodeGenerator() {
 
       gcode += processTemplate(profile.perPointGcode, pointVars);
       gcode += "\n\n";
+
+      if (profile.periodicHoleCount > 0 && (index + 1) % profile.periodicHoleCount === 0 && index < solderPoints.length - 1) {
+        gcode += processTemplate(profile.periodicGcode, {
+          PERIODIC_HOLE_COUNT: profile.periodicHoleCount,
+          START_SAFE_Z: profile.startSafeZ,
+          END_SAFE_Z: profile.endSafeZ,
+          ORIGIN_X: profile.zeroX ?? 0,
+          ORIGIN_Y: profile.zeroY ?? 0,
+          ORIGIN_Z: profile.zeroZ ?? 0,
+          MULTIPLIER: profile.solderFeedMultiplier ?? 0,
+        });
+        gcode += "\n\n";
+      }
     });
+
+    if (profile.periodicAtEnd && profile.periodicHoleCount > 0) {
+      gcode += processTemplate(profile.periodicGcode, {
+        PERIODIC_HOLE_COUNT: profile.periodicHoleCount,
+        START_SAFE_Z: profile.startSafeZ,
+        END_SAFE_Z: profile.endSafeZ,
+        ORIGIN_X: profile.zeroX ?? 0,
+        ORIGIN_Y: profile.zeroY ?? 0,
+        ORIGIN_Z: profile.zeroZ ?? 0,
+        MULTIPLIER: profile.solderFeedMultiplier ?? 0,
+      });
+      gcode += "\n\n";
+    }
 
     gcode += processTemplate(profile.endGcode, {
       END_SAFE_Z: profile.endSafeZ,
@@ -199,6 +241,12 @@ export function useGcodeGenerator() {
     return points;
   }
 
+  function randInt(min, max) {
+    const lo = Math.ceil(min);
+    const hi = Math.floor(max);
+    return Math.floor(Math.random() * (hi - lo + 1)) + lo;
+  }
+
   function processTemplate(template, variables) {
     let processed = template;
 
@@ -207,6 +255,11 @@ export function useGcodeGenerator() {
 
     processed = processed.replace(/\{([^}]+)\}/g, (match, expression) => {
       const trimmed = expression.trim();
+
+      const randMatch = trimmed.match(/^RAND\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$/);
+      if (randMatch) {
+        return randInt(Number(randMatch[1]), Number(randMatch[2]));
+      }
 
       if (variables.hasOwnProperty(trimmed)) {
         const value = variables[trimmed];

@@ -36,8 +36,7 @@
 
     <!-- Toolbar -->
     <div class="toolbar d-flex align-items-center mb-3">
-      <button class="btn btn-primary" @click="autoOptimizePath"><i class="fa-solid fa-wand-magic-sparkles"></i> Auto Optimize Path</button>
-      <button class="btn btn-secondary" @click="optimizeSelected"><i class="fa-solid fa-border-all"></i> Optimize Selection</button>
+      <button class="btn btn-primary" @click="optimizePath"><i class="fa-solid fa-wand-magic-sparkles"></i> Optimize Path</button>
 
       <button class="btn" :class="isDrawingNoGoZone ? 'btn-danger' : 'btn-outline-danger'" @click="toggleNoGoZoneMode">
         <i class="fa-solid fa-ban"></i> No-Go Zone
@@ -76,9 +75,7 @@
             />
           </transition>
 
-          <button class="btn btn-outline-dark fixed-help-button" @click="$refs.introModal.show()">
-            <i class="fas fa-question-circle"></i> Getting Started
-          </button>
+
         </div>
 
 
@@ -174,6 +171,21 @@
           <label class="text-muted me-2 mb-0" style="min-width:70px;">Thickness:</label>
           <input type="number" class="form-control form-control-sm d-inline w-auto" v-model.number="pcbThickness" step="0.1">
           <span class="ms-1">mm</span>
+        </div>
+        <div class="d-flex align-items-center mb-1">
+          <div style="min-width:70px;" class="text-muted me-2">Pad Sizes:</div>
+          <div class="flex-grow-1">
+            <div v-if="activePcbPadSizeCounts.length > 0" class="pad-size-summary small">
+              <span
+                v-for="entry in activePcbPadSizeCounts"
+                :key="entry.label"
+                class="badge rounded-pill text-bg-light border me-1 mb-1"
+              >
+                {{ entry.label }} mm: {{ entry.count }}
+              </span>
+            </div>
+            <span v-else class="text-muted small fst-italic">No drill sizes available</span>
+          </div>
         </div>
         <div class="d-flex align-items-center mb-1">
           <label class="text-muted me-2 mb-0" style="min-width:70px;">Via Filter:</label>
@@ -1283,6 +1295,25 @@ const getPadArea = (sizeString) => {
   return Math.PI * Math.pow(d / 2, 2);
 };
 
+const activePcbPadSizeCounts = computed(() => {
+  const pcb = drillStore.activePcb;
+  if (!pcb) return [];
+
+  const counts = new Map();
+  for (const hole of pcb.drillData) {
+    const diameter = getDiameter(hole.size);
+    if (!Number.isFinite(diameter) || diameter <= 0) continue;
+    const rounded = Math.round(diameter * 1000) / 1000;
+    const key = rounded.toFixed(3).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([label, count]) => ({ label, count, numeric: Number(label) }))
+    .sort((a, b) => a.numeric - b.numeric)
+    .map(({ label, count }) => ({ label, count }));
+});
+
 // Computed property that filters drill points by diameter
 // Always shows points that are marked for soldering or are in the toolpath
 const filteredDrillData = computed(() => {
@@ -1586,13 +1617,8 @@ const toggleSelect = (id, index, event) => {
 
 
 
-const autoOptimizePath = () => {
-  drillStore.autoOptimizePath();
-  updateCanvas();
-};
-
-const optimizeSelected = () => {
-  drillStore.optimizeSelection();
+const optimizePath = () => {
+  drillStore.optimizePath();
   updateCanvas();
 };
 
@@ -2081,15 +2107,6 @@ table th {
 }
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
-}
-
-.fixed-help-button {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  margin-top: 1rem;
-  pointer-events: auto;
-  width: 200px;
 }
 
 .example-drill-file{

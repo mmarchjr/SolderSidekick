@@ -63,6 +63,14 @@ G4 P500 ; Wait for 0.5 seconds
 M300 S440 P{BEEP} ; Beep
 `;
 
+const betweenBoardGcodeTemplate = `; Between Board G-code
+G0 Z{START_SAFE_Z} F800 ; Safe-Z lift between PCBs
+`;
+
+const periodicGcodeTemplate = `; Periodic G-code
+; Runs every {PERIODIC_HOLE_COUNT} holes
+`;
+
 const defaultSplineCurves = {
   soak: [
     { area: 0, value: 0 },
@@ -109,6 +117,11 @@ const defaultProfileSettings = {
   startGcode: startGcodeTemplate,
   perPointGcode: perPointTemplate,
   endGcode: endGcodeTemplate,
+  betweenBoardGcode: betweenBoardGcodeTemplate,
+  periodicGcode: periodicGcodeTemplate,
+  periodicHoleCount: 0,
+  periodicAtStart: false,
+  periodicAtEnd: false,
   splineCurves: JSON.parse(JSON.stringify(defaultSplineCurves)),
   splineGraphMaxX: 50,
   splineGraphMaxY: 10,
@@ -766,16 +779,23 @@ export const useDrillStore = defineStore("drill", () => {
     return d;
   }
 
-  function _nearestNeighborWithZoneAvoidance(points, pcb) {
+  function _nearestNeighborWithZoneAvoidance(points, pcb, startId = null) {
     if (points.length === 0) return [];
     pcb = pcb || activePcb.value;
     const zones = _getAllNoGoZones(pcb);
     const hasZones = zones.length > 0;
     const bedCoords = new Map();
     if (hasZones) { for (const d of points) bedCoords.set(d.id, drillToBedSpace(d, pcb)); }
+
+    let start = points[0];
+    if (startId !== null) {
+      const found = points.find(d => d.id === startId);
+      if (found) start = found;
+    }
+
     const pathArr = [];
     const visited = new Set();
-    let current = points[0];
+    let current = start;
     pathArr.push(current.id);
     visited.add(current.id);
     while (pathArr.length < points.length) {
@@ -798,28 +818,70 @@ export const useDrillStore = defineStore("drill", () => {
     return pathArr;
   }
 
-  function autoOptimizePath() {
+  function optimizePath() {
     const pcb = activePcb.value;
     if (!pcb) return;
-    const unsorted = pcb.drillData.filter(d => d.solder && !isPointInNoGoZone(d, pcb));
-    if (unsorted.length === 0) return;
-    addUndoSnapshot(_takeSnapshot());
-    pcb.path = _nearestNeighborWithZoneAvoidance(unsorted, pcb);
-    updatePcbPathIndices(pcb.id);
-  }
 
-  function optimizeSelection() {
-    const pcb = activePcb.value;
-    if (!pcb) return;
-    const selected = pcb.drillData.filter(d => d.selected);
-    if (selected.length < 2) return;
+    const selectedPoints = pcb.drillData.filter(d => d.selected);
+    const hasSelection = selectedPoints.length > 0;
+
+    let pointsToOptimize;
+    let startId = null;
+
+    if (hasSelection) {
+      selectedPoints.forEach(d => { d.solder = true; });
+      pointsToOptimize = selectedPoints;
+
+      if (pcb.path.length > 0) {
+        const lastPathId = pcb.path[pcb.path.length - 1];
+        const lastPoint = pcb.drillData.find(d => d.id === lastPathId);
+        if (lastPoint) {
+          let closest = null;
+          let minDist = Infinity;
+          for (const sp of selectedPoints) {
+            const bedLast = drillToBedSpace(lastPoint, pcb);
+            const bedSp = drillToBedSpace(sp, pcb);
+            const dist = Math.hypot(bedSp.x - bedLast.x, bedSp.y - bedLast.y);
+            if (dist < minDist) {
+              minDist = dist;
+              closest = sp;
+            }
+          }
+          if (closest) startId = closest.id;
+        }
+      }
+    } else {
+      pointsToOptimize = pcb.drillData.filter(d => d.solder && !isPointInNoGoZone(d, pcb));
+
+      if (pointsToOptimize.length > 0) {
+        let bottomLeft = pointsToOptimize[0];
+        let blBed = drillToBedSpace(bottomLeft, pcb);
+        for (const p of pointsToOptimize) {
+          const bed = drillToBedSpace(p, pcb);
+          if (bed.y < blBed.y || (bed.y === blBed.y && bed.x < blBed.x)) {
+            bottomLeft = p;
+            blBed = bed;
+          }
+        }
+        startId = bottomLeft.id;
+      }
+    }
+
+    if (pointsToOptimize.length === 0) return;
+
     addUndoSnapshot(_takeSnapshot());
     redoStack.value = [];
-    selected.forEach(d => { d.solder = true; });
-    const newOrder = _nearestNeighborWithZoneAvoidance(selected, pcb);
-    const idsToReplace = new Set(selected.map(d => d.id));
-    pcb.path = pcb.path.filter(id => !idsToReplace.has(id));
-    pcb.path.push(...newOrder);
+
+    const newOrder = _nearestNeighborWithZoneAvoidance(pointsToOptimize, pcb, startId);
+
+    if (hasSelection) {
+      const idsToReplace = new Set(selectedPoints.map(d => d.id));
+      pcb.path = pcb.path.filter(id => !idsToReplace.has(id));
+      pcb.path.push(...newOrder);
+    } else {
+      pcb.path = newOrder;
+    }
+
     updatePcbPathIndices(pcb.id);
   }
 
@@ -860,7 +922,7 @@ export const useDrillStore = defineStore("drill", () => {
     isPointInNoGoZone, isPointInGlobalNoGoZone, isPointInPcbNoGoZone,
     segmentCrossesNoGoZone, getNoGoCorners,
     computeRouteAroundZones, routedDistance,
-    _nearestNeighborWithZoneAvoidance, autoOptimizePath, optimizeSelection,
+    _nearestNeighborWithZoneAvoidance, optimizePath,
 
     // Template constants
     defaultProfileSettings,

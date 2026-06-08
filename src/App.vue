@@ -3,32 +3,6 @@
   <div class="app-root">
 
     <div v-if="isMobile && route.meta.pageClass == 'toolpath-editor-page'" class="mobile-message">
-  <div class="mobile-content">
-    <div class="mobile-logo-placeholder"></div>
-
-    <p class="mobile-text">
-      Turn your Ender 3 into a hands-free soldering machine with this open hardware kit.
-    </p>
-
-    <div class="video-wrapper">
-      <iframe
-        width="100%"
-        height="315"
-        src="https://www.youtube.com/embed/MGpWirqkfZk"
-        title="Getting Started"
-        frameborder="0"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowfullscreen
-      ></iframe>
-    </div>
-
-    <p class="mobile-note">
-      This app runs on desktop. Here's a quick video — check it out on your computer later.
-    </p>
-    <a href="https://www.soldersidekick.com/getting-started" class="btn btn-outline-light share-btn">
-      <i class="fa-solid fa-check me-2"></i> Getting Started
-    </a>
-  </div>
 
 <!-- Bottom section -->
 <div class="mobile-actions">
